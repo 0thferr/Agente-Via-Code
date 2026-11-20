@@ -1,0 +1,59 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: jobpilot
+      POSTGRES_PASSWORD: jobpilot
+      POSTGRES_DB: jobpilot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jobpilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Executa as migrations uma única vez antes da API subir.
+  migrate:
+    build: .
+    command: ["alembic", "upgrade", "head"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobpilot:jobpilot@db:5432/jobpilot
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://jobpilot:jobpilot@db:5432/jobpilot
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_DIR: /app/storage
+    ports:
+      - "8000:8000"
+    volumes:
+      - resume_storage:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  resume_storage:
