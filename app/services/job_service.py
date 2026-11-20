@@ -22,7 +22,12 @@ from app.integrations.job_providers.base import (
     ProviderError,
     RawJob,
 )
-from app.integrations.job_providers.registry import MANUAL_PROVIDER_KEY, ProviderRegistry
+from app.integrations.job_providers.registry import (
+    MANUAL_PLATFORM_KEYS,
+    MANUAL_PROVIDER_KEY,
+    ProviderRegistry,
+    detect_platform,
+)
 from app.models.enums import DiscoveryMethod
 from app.models.job import JobOpportunity, JobSource
 from app.schemas.job import (
@@ -177,12 +182,18 @@ def import_job(
     session: Session, user_id: uuid.UUID, data: JobImportRequest
 ) -> tuple[JobOpportunity, bool]:
     """Cadastro manual de vaga. Idempotente: a mesma vaga devolve o registro existente."""
-    raw = RawJob(**data.model_dump())
+    platform = data.platform or detect_platform(data.url) or MANUAL_PROVIDER_KEY
+    if platform not in MANUAL_PLATFORM_KEYS:
+        raise ValidationError(
+            f"Plataforma '{platform}' inválida para importação manual. "
+            f"Use uma de: {', '.join(sorted(MANUAL_PLATFORM_KEYS))}."
+        )
+    raw = RawJob(**data.model_dump(exclude={"platform"}))
     job, created = save_job(
         session,
         user_id,
         raw,
-        provider_key=MANUAL_PROVIDER_KEY,
+        provider_key=platform,
         source_id=None,
         method=DiscoveryMethod.MANUAL,
     )

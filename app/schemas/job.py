@@ -87,6 +87,11 @@ class JobImportRequest(BaseModel):
     """Vaga cadastrada manualmente a partir de um link (fluxo assistido)."""
 
     url: UrlText
+    platform: Annotated[str, StringConstraints(max_length=50)] | None = Field(
+        default=None,
+        description="Plataforma de origem (ex.: linkedin, gupy). Se omitida, é detectada "
+        "pela URL; sem correspondência, fica 'manual'.",
+    )
     title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
     company: ShortText
     description: Annotated[str, StringConstraints(max_length=20_000)] = ""

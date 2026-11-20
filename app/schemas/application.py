@@ -4,9 +4,21 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+)
 
-from app.models.application import DEFAULT_MAX_DAILY_SUBMISSIONS, Application
+from app.integrations.job_providers.registry import MANUAL_PLATFORM_KEYS
+from app.models.application import (
+    DEFAULT_ASSISTED_DAILY_LIMITS,
+    DEFAULT_MAX_DAILY_SUBMISSIONS,
+    Application,
+)
 from app.models.enums import (
     ApplicationMode,
     ApplicationStatus,
@@ -32,6 +44,21 @@ class ApplicationSettingsIn(BaseModel):
         description="Provedores em que o modo automático pode enviar sem aprovação.",
     )
     max_daily_submissions: int = Field(default=DEFAULT_MAX_DAILY_SUBMISSIONS, ge=0, le=100)
+    assisted_daily_limits: dict[str, Annotated[int, Field(ge=0, le=100)]] = Field(
+        default_factory=lambda: dict(DEFAULT_ASSISTED_DAILY_LIMITS),
+        description="Modo assistido: limite diário por plataforma sem envio integrado "
+        "(candidaturas enviadas hoje + kits aguardando envio).",
+    )
+
+    @field_validator("assisted_daily_limits")
+    @classmethod
+    def validate_assisted_platforms(cls, value: dict[str, int]) -> dict[str, int]:
+        unknown = set(value) - MANUAL_PLATFORM_KEYS
+        if unknown:
+            raise ValueError(
+                f"Plataformas inválidas: {sorted(unknown)}. Use: {sorted(MANUAL_PLATFORM_KEYS)}."
+            )
+        return value
 
 
 class ApplicationSettingsOut(ApplicationSettingsIn):
@@ -146,3 +173,36 @@ class ApplicationListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class AssistedQuotaOut(BaseModel):
+    platform: str
+    limit: int
+    applied_today: int
+    pending_kits: int
+    remaining: int
+
+
+class KitAnswer(BaseModel):
+    field: str
+    label: str
+    value: str
+
+
+class ApplicationKitOut(BaseModel):
+    """Tudo o que você precisa para se candidatar na plataforma em poucos minutos."""
+
+    application_id: uuid.UUID
+    platform: str
+    job_title: str
+    company: str
+    job_url: str = Field(description="Abra este link e cole os dados abaixo no formulário.")
+    cover_letter: str | None
+    cover_letter_warnings: list[str]
+    resume_id: uuid.UUID | None
+    resume_filename: str | None
+    resume_download_path: str | None
+    answers: list[KitAnswer] = Field(description="Respostas tiradas só do seu perfil.")
+    pending_questions: list[PendingQuestionOut]
+    quota: AssistedQuotaOut | None
+    next_step: str

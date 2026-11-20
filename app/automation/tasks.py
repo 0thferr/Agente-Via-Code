@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.crypto import SecretCipher
@@ -38,7 +38,7 @@ from app.schemas.job import JobSearchRequest
 from app.services import job_service
 from app.services.analysis import analysis_service
 from app.services.analysis.requirements import RequirementAnalyzer
-from app.services.applications import application_service, submission_service
+from app.services.applications import application_service, policy, submission_service
 from app.services.communication import email_service, notification_service
 from app.services.cover_letters.writers import CoverLetterWriter
 
@@ -104,23 +104,35 @@ def analyze_jobs(
 def prepare_applications(
     session: Session, context: TaskContext, user_id: uuid.UUID, config: dict[str, Any]
 ) -> dict[str, Any]:
-    """Cria e prepara candidaturas para vagas qualificadas que ainda não têm uma."""
+    """Cria e prepara candidaturas para as vagas qualificadas mais compatíveis.
+
+    Nas plataformas do modo assistido (ex.: LinkedIn, Gupy), respeita o limite diário:
+    vagas além da cota ficam para os próximos dias.
+    """
     limit = BatchConfig.model_validate(config).max_items
-    has_application = exists().where(Application.job_id == JobAnalysis.job_id)
-    job_ids = session.scalars(
-        select(JobAnalysis.job_id)
+    settings = application_service.get_settings(session, user_id)
+    rows = session.execute(
+        select(JobAnalysis.job_id, JobOpportunity.provider_key)
+        .join(JobOpportunity, JobOpportunity.id == JobAnalysis.job_id)
+        .outerjoin(Application, Application.job_id == JobAnalysis.job_id)
         .where(
             JobAnalysis.user_id == user_id,
             JobAnalysis.status == AnalysisStatus.COMPLETED,
             JobAnalysis.recommendation == Recommendation.QUALIFIED,
-            ~has_application,
+            # Sem candidatura ainda, ou criada mas não preparada (ex.: cota de ontem).
+            or_(Application.id.is_(None), Application.status == ApplicationStatus.DISCOVERED),
         )
-        .group_by(JobAnalysis.job_id)
-        .order_by(func.max(JobAnalysis.created_at).desc())
+        .group_by(JobAnalysis.job_id, JobOpportunity.provider_key)
+        .order_by(func.max(JobAnalysis.score).desc())
         .limit(limit)
     ).all()
-    counts = {"prepared": 0, "skipped": 0}
-    for job_id in job_ids:
+    counts = {"prepared": 0, "skipped": 0, "over_daily_limit": 0}
+    assisted_ready: dict[str, int] = {}
+    for job_id, platform in rows:
+        quota = policy.assisted_quota(session, user_id, platform, settings)
+        if quota is not None and quota.remaining == 0:
+            counts["over_daily_limit"] += 1
+            continue
         application, _ = application_service.create_application(session, user_id, job_id)
         try:
             application_service.prepare_application(
@@ -133,9 +145,26 @@ def prepare_applications(
                 ApplicationPrepareRequest(),
             )
             counts["prepared"] += 1
+            if quota is not None:
+                assisted_ready[platform] = assisted_ready.get(platform, 0) + 1
         except (ValidationError, ConflictError):
             counts["skipped"] += 1
+    if assisted_ready:
+        _notify_assisted_queue(session, user_id, assisted_ready)
     return counts
+
+
+def _notify_assisted_queue(session: Session, user_id: uuid.UUID, ready: dict[str, int]) -> None:
+    summary = ", ".join(f"{count} no {platform}" for platform, count in sorted(ready.items()))
+    notification_service.notify(
+        session,
+        user_id,
+        NotificationEvent.ASSISTED_QUEUE_READY,
+        title="Candidaturas prontas para você enviar",
+        body=f"Kits prontos: {summary}. Abra cada kit, envie na plataforma e registre o envio.",
+        data={"ready": ready},
+    )
+    session.commit()
 
 
 def submit_applications(

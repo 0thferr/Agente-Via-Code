@@ -4,6 +4,7 @@ Centralizar aqui evita que a preparação e o envio usem critérios diferentes.
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, time
 
 from sqlalchemy import func, select
@@ -12,7 +13,12 @@ from sqlalchemy.orm import Session
 from app.integrations.application_submitters.registry import SubmitterRegistry
 from app.models.analysis import CoverLetter
 from app.models.application import Application, ApplicationApproval
-from app.models.enums import ApplicationMode, ApprovalDecision, ConfirmationSource
+from app.models.enums import (
+    ApplicationMode,
+    ApplicationStatus,
+    ApprovalDecision,
+    ConfirmationSource,
+)
 from app.models.job import JobOpportunity
 from app.models.profile import ProfessionalProfile
 from app.schemas.application import ApplicationSettingsIn
@@ -50,6 +56,52 @@ def daily_limit_reached(
     session: Session, user_id: uuid.UUID, settings: ApplicationSettingsIn
 ) -> bool:
     return submissions_today(session, user_id) >= settings.max_daily_submissions
+
+
+ASSISTED_PENDING_STATUSES = (ApplicationStatus.AWAITING_APPROVAL, ApplicationStatus.READY_TO_APPLY)
+
+
+@dataclass(frozen=True)
+class AssistedQuota:
+    platform: str
+    limit: int
+    applied_today: int
+    pending_kits: int
+
+    @property
+    def remaining(self) -> int:
+        return max(self.limit - self.applied_today - self.pending_kits, 0)
+
+
+def assisted_quota(
+    session: Session, user_id: uuid.UUID, platform: str, settings: ApplicationSettingsIn
+) -> AssistedQuota | None:
+    """Cota do dia para uma plataforma do modo assistido (None se não for assistida).
+
+    Conta as candidaturas enviadas hoje e os kits já prontos aguardando envio, para
+    que a fila nunca passe do que dá para enviar no dia.
+    """
+    if platform not in settings.assisted_daily_limits:
+        return None
+    start_of_day = datetime.combine(datetime.now(UTC).date(), time.min, tzinfo=UTC)
+    platform_applications = (
+        select(func.count())
+        .select_from(Application)
+        .join(JobOpportunity, JobOpportunity.id == Application.job_id)
+        .where(Application.user_id == user_id, JobOpportunity.provider_key == platform)
+    )
+    applied_today = session.scalar(
+        platform_applications.where(Application.submitted_at >= start_of_day)
+    )
+    pending = session.scalar(
+        platform_applications.where(Application.status.in_(ASSISTED_PENDING_STATUSES))
+    )
+    return AssistedQuota(
+        platform=platform,
+        limit=settings.assisted_daily_limits[platform],
+        applied_today=applied_today or 0,
+        pending_kits=pending or 0,
+    )
 
 
 def has_valid_approval(session: Session, application: Application) -> bool:

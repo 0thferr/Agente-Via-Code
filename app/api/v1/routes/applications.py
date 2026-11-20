@@ -16,6 +16,7 @@ from app.schemas.application import (
     ApplicationApproveRequest,
     ApplicationCreate,
     ApplicationEventOut,
+    ApplicationKitOut,
     ApplicationListFilters,
     ApplicationListResponse,
     ApplicationOut,
@@ -90,6 +91,17 @@ def get_application(
 ) -> ApplicationOut:
     application = application_service.get_application(session, current_user.id, application_id)
     return ApplicationOut.from_record(application)
+
+
+@router.get("/{application_id}/kit", response_model=ApplicationKitOut)
+def get_kit(
+    application_id: uuid.UUID, session: SessionDep, current_user: CurrentUserDep
+) -> ApplicationKitOut:
+    """Modo assistido: dados prontos para você se candidatar na plataforma (ex.: LinkedIn,
+    Gupy). O sistema não envia nada nessas plataformas; depois de enviar, use /mark-applied."""
+    return ApplicationKitOut.model_validate(
+        application_service.build_kit(session, current_user.id, application_id)
+    )
 
 
 @router.post("/{application_id}/prepare", response_model=ApplicationOut)

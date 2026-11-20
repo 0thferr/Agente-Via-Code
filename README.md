@@ -16,7 +16,8 @@ profissional real do candidato e (nas próximas fases) descobre, analisa e acomp
 | --- | --- |
 | Auth, perfil, currículos, vagas manuais, deduplicação, análise determinística, candidaturas, aprovação, idempotência, automação, notificações in-app, dashboard | **Funcional** e testado |
 | Busca automática de vagas | **Simulada** (provedor `mock`); LinkedIn, Gupy, Indeed, Catho e Vagas.com.br só por importação manual |
-| Envio automático de candidaturas | **Simulado** (apenas vagas `mock`); demais plataformas: candidate-se lá e registre com `/mark-applied` |
+| Envio automático de candidaturas | **Simulado** (apenas vagas `mock`) |
+| LinkedIn e Gupy | **Modo assistido**: a API prepara o kit (texto, currículo, respostas) e você envia na plataforma; limite diário por plataforma (padrão 10) |
 | Análise e textos com IA | `simulated` (palavras-chave, sem custo) por padrão; cliente **OpenAI implementado, não validado com chave real** |
 | Monitoramento de e-mail | Caixa **simulada** funcional; clientes **Gmail/Outlook implementados, não validados** com app OAuth real |
 | Notificações externas | E-mail (SMTP), Telegram e webhook implementados (precisam de configuração); **push não implementado** |
@@ -223,6 +224,7 @@ curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0
 | POST / GET | `/api/v1/applications` | Cria a candidatura de uma vaga (idempotente) / lista com filtro de status |
 | GET | `/api/v1/applications/{id}` | Detalhe da candidatura |
 | POST | `/api/v1/applications/{id}/prepare` | Analisa e monta texto, currículo e pendências |
+| GET | `/api/v1/applications/{id}/kit` | Modo assistido: link, texto, currículo, respostas e cota do dia |
 | POST | `/api/v1/applications/{id}/answers` | Responde perguntas obrigatórias que o perfil não cobre |
 | POST | `/api/v1/applications/{id}/approve` | Aprova a versão exata do texto e do currículo |
 | POST | `/api/v1/applications/{id}/reject` | Recusa (encerra sem envio) |
@@ -348,6 +350,27 @@ DISCOVERED → ANALYZING → QUALIFIED → AWAITING_APPROVAL → READY_TO_APPLY 
 - **Integrações de envio:** só existe o enviador **simulado** (vagas do provedor `mock`).
   Para as demais plataformas, candidate-se nelas e registre com `/mark-applied`
   (`confirmation_source = user_declared`).
+
+## Modo assistido (LinkedIn e Gupy)
+
+LinkedIn e Gupy não oferecem API de candidatura para candidatos, e automatizar o
+formulário (bots, extensões, automação de navegador) viola os termos de uso e arrisca
+banimento da conta. Por isso, nessas plataformas **a API prepara e você envia**:
+
+1. Importe a vaga pelo link (`POST /jobs/import`): a plataforma é detectada pela URL
+   (`linkedin.com`, `*.gupy.io`...) ou informada em `platform`.
+2. Prepare a candidatura (você ou a rotina `prepare_applications`, que começa pelas vagas
+   de maior nota).
+3. Abra o kit (`GET /applications/{id}/kit`): link da vaga, texto de apresentação,
+   currículo e respostas prontas para o formulário (nome, contato, localização, links,
+   pretensão salarial, disponibilidade, idiomas) — tudo tirado **só do seu perfil**.
+4. Envie na plataforma e registre com `POST /applications/{id}/mark-applied`.
+
+**Limite diário por plataforma** (`assisted_daily_limits` em `/applications/settings`,
+padrão `{"linkedin": 10, "gupy": 10}`): enviadas hoje + kits prontos aguardando envio
+não passam do limite. Ao atingir, novas preparações nessa plataforma são recusadas e o
+worker deixa as vagas restantes para os próximos dias. Recusar um kit libera a vaga na cota.
+Quando a fila do dia fica pronta, você recebe a notificação `assisted_queue_ready`.
 
 ## Automação (worker)
 

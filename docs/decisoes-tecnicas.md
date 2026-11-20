@@ -192,3 +192,24 @@ candidatura que já virou proposta continua contando como entrevista.
 
 **Intervalo máximo de 366 dias.** Evita consultas que varrem o histórico inteiro sem
 necessidade.
+
+## Modo assistido (LinkedIn e Gupy)
+
+**A API prepara, o usuário envia.** Foi pedido que a API preenchesse os formulários do
+LinkedIn e da Gupy com limite de 10 por dia. Não implementamos automação de navegador:
+viola os termos de uso (o LinkedIn proíbe bots e extensões que automatizam o serviço),
+arrisca banir a conta do usuário, exige guardar a sessão dele e quebra a cada mudança de
+layout. O modo assistido entrega quase o mesmo ganho (todos os dados prontos) sem esses
+riscos.
+
+**Plataforma da vaga importada.** Antes toda importação virava `manual`; agora a
+plataforma é detectada pela URL ou informada. Sem isso não haveria como limitar por
+plataforma.
+
+**Cota = enviadas hoje + kits pendentes.** Contar só os envios deixaria a fila crescer sem
+limite (o worker prepararia dezenas de kits por dia). Somar os pendentes mantém a fila do
+tamanho do que dá para enviar. A verificação acontece antes de qualquer mudança de estado,
+então uma preparação recusada não deixa rastros.
+
+**Gravar um envio nunca é bloqueado.** `/mark-applied` registra o que já aconteceu na
+plataforma; recusar perderia informação. O limite atua na preparação dos kits.

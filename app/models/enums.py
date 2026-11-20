@@ -194,6 +194,7 @@ class NotificationEvent(StrEnum):
     MESSAGE_NEEDS_REVIEW = "message_needs_review"
     DEADLINE_APPROACHING = "deadline_approaching"
     DAILY_SUMMARY = "daily_summary"
+    ASSISTED_QUEUE_READY = "assisted_queue_ready"
 
 
 class NotificationChannel(StrEnum):

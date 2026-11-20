@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
@@ -30,6 +31,7 @@ from app.models.enums import (
 )
 
 DEFAULT_MAX_DAILY_SUBMISSIONS = 10
+DEFAULT_ASSISTED_DAILY_LIMITS = {"linkedin": 10, "gupy": 10}
 
 
 class ApplicationSettings(TimestampMixin, Base):
@@ -46,6 +48,14 @@ class ApplicationSettings(TimestampMixin, Base):
         ARRAY(String(50)), default=list, server_default=EMPTY_ARRAY
     )
     max_daily_submissions: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Modo assistido: plataformas sem envio integrado (ex.: LinkedIn, Gupy), em que a
+    # API prepara o kit e o usuário envia. Limite diário por plataforma.
+    assisted_daily_limits: Mapped[dict[str, int]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=lambda: dict(DEFAULT_ASSISTED_DAILY_LIMITS),
+        server_default=text("""'{"linkedin": 10, "gupy": 10}'::jsonb"""),
+    )
 
     __table_args__ = (CheckConstraint("max_daily_submissions >= 0", name="max_daily_non_negative"),)
 

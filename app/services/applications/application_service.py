@@ -4,6 +4,7 @@ O envio por integração fica em submission_service.py.
 """
 
 import uuid
+from dataclasses import asdict
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
@@ -88,6 +89,7 @@ def save_settings(
     stored.mode = data.mode
     stored.auto_submit_providers = list(dict.fromkeys(data.auto_submit_providers))
     stored.max_daily_submissions = data.max_daily_submissions
+    stored.assisted_daily_limits = dict(data.assisted_daily_limits)
     session.add(stored)
     record_audit_event(
         session,
@@ -209,6 +211,7 @@ def prepare_application(
         raise ConflictError(f"Candidatura em {application.status} não pode ser preparada.")
     job = job_service.get_job(session, user_id, application.job_id)
     profile = _require_profile(session, user_id)
+    _ensure_assisted_quota(session, user_id, job)
 
     transition(session, application, ApplicationStatus.ANALYZING, actor=EventActor.AGENT)
     analysis = _get_or_run_analysis(session, analyzer, application, job, profile)
@@ -293,6 +296,92 @@ def _route_after_preparation(
         data={"application_id": str(application.id)},
         dedup_key=f"approval_pending:{application.id}",
     )
+
+
+def _ensure_assisted_quota(session: Session, user_id: uuid.UUID, job: JobOpportunity) -> None:
+    quota = policy.assisted_quota(
+        session, user_id, job.provider_key, get_settings(session, user_id)
+    )
+    if quota is not None and quota.remaining == 0:
+        raise ValidationError(
+            f"Limite diário de {quota.limit} candidaturas em {quota.platform} atingido "
+            f"({quota.applied_today} enviadas hoje, {quota.pending_kits} aguardando envio)."
+        )
+
+
+# --- Kit do modo assistido -------------------------------------------------------------
+
+KIT_STATUSES = {ApplicationStatus.AWAITING_APPROVAL, ApplicationStatus.READY_TO_APPLY}
+
+
+def build_kit(session: Session, user_id: uuid.UUID, application_id: uuid.UUID) -> dict:
+    """Monta o kit de candidatura: link, texto, currículo e respostas do perfil."""
+    application = get_application(session, user_id, application_id)
+    if application.status not in KIT_STATUSES:
+        raise ConflictError(
+            "O kit fica disponível depois de preparar a candidatura e antes de enviá-la."
+        )
+    job = job_service.get_job(session, user_id, application.job_id)
+    profile = _require_profile(session, user_id)
+    letter = (
+        session.get(CoverLetter, application.cover_letter_id)
+        if application.cover_letter_id
+        else None
+    )
+    resume = session.get(Resume, application.resume_id) if application.resume_id else None
+    quota = policy.assisted_quota(
+        session, user_id, job.provider_key, get_settings(session, user_id)
+    )
+    return {
+        "application_id": application.id,
+        "platform": job.provider_key,
+        "job_title": job.title,
+        "company": job.company,
+        "job_url": job.url,
+        "cover_letter": letter.content if letter else None,
+        "cover_letter_warnings": letter.validation_warnings if letter else [],
+        "resume_id": resume.id if resume else None,
+        "resume_filename": resume.original_filename if resume else None,
+        "resume_download_path": f"/api/v1/profile/resumes/{resume.id}/file" if resume else None,
+        "answers": _profile_answers(profile)
+        + [
+            {"field": key, "label": key, "value": value}
+            for key, value in application.answers.items()
+        ],
+        "pending_questions": application.pending_questions,
+        "quota": ({**asdict(quota), "remaining": quota.remaining} if quota is not None else None),
+        "next_step": (
+            "Abra o link, preencha o formulário com estes dados, envie e registre em "
+            f"POST /api/v1/applications/{application.id}/mark-applied."
+        ),
+    }
+
+
+def _profile_answers(profile: ProfessionalProfile) -> list[dict[str, str]]:
+    """Respostas comuns de formulários, só com o que está cadastrado no perfil."""
+    location = ", ".join(part for part in (profile.city, profile.state, profile.country) if part)
+    salary = policy.answer_from_profile("salary", profile)
+    languages = "; ".join(
+        f"{language.name} ({language.proficiency})" for language in profile.languages
+    )
+    candidates = [
+        ("full_name", "Nome completo", profile.full_name),
+        ("email", "E-mail", profile.contact_email),
+        ("phone", "Telefone", profile.phone),
+        ("location", "Localização", location),
+        ("current_title", "Cargo atual", profile.current_title),
+        ("linkedin_url", "LinkedIn", profile.linkedin_url),
+        ("github_url", "GitHub", profile.github_url),
+        ("portfolio_url", "Portfólio", profile.portfolio_url),
+        ("salary_expectation", "Pretensão salarial", salary),
+        ("availability", "Disponibilidade", profile.availability),
+        ("languages", "Idiomas", languages),
+    ]
+    return [
+        {"field": field, "label": label, "value": value}
+        for field, label, value in candidates
+        if value
+    ]
 
 
 # --- Decisões do usuário --------------------------------------------------------------

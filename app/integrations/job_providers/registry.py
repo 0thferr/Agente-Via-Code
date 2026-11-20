@@ -4,6 +4,8 @@ Plataformas sem integração autorizada aparecem como MANUAL_ONLY: o usuário
 importa as vagas pelo link (POST /jobs/import). Nenhuma delas faz scraping.
 """
 
+from urllib.parse import urlsplit
+
 from app.core.errors import NotFoundError
 from app.integrations.job_providers.base import JobProvider, ManualOnlyProvider
 from app.integrations.job_providers.mock import MockJobProvider
@@ -39,6 +41,32 @@ _MANUAL_ONLY_PLATFORMS = [
     ),
     (MANUAL_PROVIDER_KEY, "Importação manual", "Vagas cadastradas pelo próprio usuário."),
 ]
+
+
+MANUAL_PLATFORM_KEYS = frozenset(key for key, _, _ in _MANUAL_ONLY_PLATFORMS)
+
+# Domínio da URL -> plataforma, para identificar vagas importadas manualmente.
+_PLATFORM_DOMAINS = {
+    "linkedin.com": "linkedin",
+    "gupy.io": "gupy",
+    "indeed.com": "indeed",
+    "indeed.com.br": "indeed",
+    "catho.com.br": "catho",
+    "vagas.com.br": "vagas_com_br",
+}
+
+
+def detect_platform(url: str) -> str | None:
+    """Plataforma de origem pelo domínio da URL (ex.: empresa.gupy.io -> gupy)."""
+    host = (urlsplit(url).hostname or "").lower()
+    return next(
+        (
+            platform
+            for domain, platform in _PLATFORM_DOMAINS.items()
+            if host == domain or host.endswith(f".{domain}")
+        ),
+        None,
+    )
 
 
 class ProviderRegistry:
