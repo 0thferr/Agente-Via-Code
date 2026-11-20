@@ -4,7 +4,8 @@ API backend de um agente pessoal de candidaturas a vagas de emprego: guarda o pe
 profissional real do candidato e (nas próximas fases) descobre, analisa e acompanha vagas.
 
 > **Estado atual:** Fases 1 (fundação), 2 (descoberta de vagas), 3 (análise de
-> compatibilidade e textos de apresentação), 4 (candidaturas) e 5 (automação) concluídas. Veja
+> compatibilidade e textos de apresentação), 4 (candidaturas), 5 (automação) e 6
+> (comunicação: e-mails e notificações) concluídas. Veja
 > [Roadmap](#roadmap), [Como a análise funciona](#como-a-análise-de-compatibilidade-funciona),
 > [Ciclo da candidatura](#ciclo-da-candidatura) e [Limitações conhecidas](#limitações-conhecidas).
 
@@ -221,6 +222,15 @@ curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0
 | PATCH | `/api/v1/automations/{id}` | Atualiza (agendamento, config, liga/desliga) |
 | POST | `/api/v1/automations/{id}/run` | Enfileira execução imediata (202) |
 | GET | `/api/v1/automations/executions` | Histórico de execuções com log de cada tentativa |
+| GET | `/api/v1/integrations` | Estado real das integrações (vagas, e-mail, canais) |
+| POST | `/api/v1/integrations/{provider}/connect` | Inicia OAuth (gmail/outlook) ou conecta a caixa simulada |
+| GET | `/api/v1/integrations/{provider}/callback` | Retorno do OAuth (valida `state` + PKCE) |
+| DELETE | `/api/v1/integrations/{provider}/disconnect` | Remove conta, tokens e mensagens importadas |
+| GET | `/api/v1/messages` | E-mails de recrutamento detectados (filtros: categoria, associação) |
+| PATCH | `/api/v1/messages/{id}/association` | Valida a qual candidatura o e-mail pertence |
+| GET | `/api/v1/notifications` | Notificações (com contagem de não lidas) |
+| PATCH | `/api/v1/notifications/{id}/read` | Marca como lida |
+| GET / PUT | `/api/v1/notifications/preferences` | Canais, eventos, intervalo mínimo, destinos |
 
 Erros seguem sempre o formato `{"error": {"code": "...", "message": "..."}}` (erros de
 validação de entrada usam o formato padrão do FastAPI, com status 422).
@@ -336,7 +346,9 @@ no compose). A cada `WORKER_TICK_SECONDS` ele:
 | `analyze_jobs` | Analisa vagas ainda sem análise | `max_items` (1–50) |
 | `prepare_applications` | Cria e prepara candidaturas para vagas qualificadas | `max_items` |
 | `submit_applications` | Envia candidaturas prontas (mesmas regras de autorização do envio manual) | `max_items` |
-| `daily_summary` | Resume a atividade das últimas 24h | — |
+| `daily_summary` | Resume a atividade das últimas 24h e envia como notificação | — |
+| `check_emails` | Sincroniza as contas de e-mail conectadas | — |
+| `check_deadlines` | Avisa prazos que vencem nas próximas 48h | — |
 
 Agendamento: **horário fixo** (`time_of_day` + `days_of_week` + `timezone` IANA) **ou**
 **intervalo** (`interval_minutes`, mínimo 15). Execuções perdidas não são repetidas em
@@ -356,6 +368,34 @@ curl -s -X POST localhost:8000/api/v1/automations \
        "days_of_week": [0,1,2,3,4], "timezone": "America/Sao_Paulo",
        "config": {"filters": {"technologies": ["python"]}}}'
 ```
+
+## E-mails e notificações
+
+**Monitoramento de e-mails (somente leitura).** Gmail e Outlook via OAuth 2.0 com
+`state` de uso único (expira em 10 min) e **PKCE**. Escopos mínimos: `gmail.readonly` e
+`Mail.Read`. O sistema **não tem permissão de envio**: nunca responde recrutadores.
+
+- São lidos e guardados só remetente, assunto, um trecho de até 300 caracteres e datas.
+  **O corpo do e-mail não é baixado nem armazenado.**
+- Tokens ficam **cifrados** (Fernet, `TOKEN_ENCRYPTION_KEY`) e nunca aparecem em logs.
+- Classificação por regras: convite para entrevista, teste técnico, mudança de etapa,
+  proposta, recusa; datas (`dd/mm[/aaaa]` + horário) e prazos ("até", "prazo").
+- **Associação à candidatura** por nome da empresa, domínio do remetente e cargo. Só
+  associa sozinho quando há um candidato claro; se houver dúvida, fica `needs_review`,
+  você recebe uma notificação e confirma em `PATCH /messages/{id}/association`.
+- E-mail associado atualiza a etapa (ex.: convite → `INTERVIEW`) e entra na linha do tempo.
+- **Caixa simulada** (`simulated`) para demonstrar tudo sem OAuth.
+
+**Notificações.** Sempre salvas no app (in-app); canais externos opcionais:
+e-mail (SMTP), Telegram e webhook com assinatura **HMAC-SHA256** no cabeçalho
+`X-JobPilot-Signature` (o segredo é mostrado uma única vez). As entregas externas são
+feitas pelo worker, com até 3 tentativas. Há **deduplicação** (o mesmo fato não notifica
+duas vezes), **eventos desativáveis** e **intervalo mínimo por evento**. **Push não está
+implementado** (exigiria chaves VAPID e registro de dispositivos pelo app).
+
+Eventos: vaga com alta compatibilidade (nota ≥ 80), candidatura aguardando aprovação,
+candidatura enviada, falha no envio, convite para entrevista, teste técnico, proposta,
+e-mail que precisa de validação, prazo próximo e resumo diário.
 
 ## Segurança (o que já está implementado)
 
@@ -384,6 +424,9 @@ curl -s -X POST localhost:8000/api/v1/automations \
 - Prompts e respostas da IA não são registrados em log (contêm dados pessoais).
 - Envio de candidatura: permissões verificadas antes de qualquer chamada externa; respostas
   de formulário não aparecem na linha do tempo nem nas listagens (só quais foram dadas).
+- OAuth com `state` de uso único + PKCE; tokens e segredos de webhook cifrados no banco;
+  webhooks só HTTPS, sem IPs internos e sem seguir redirecionamentos (proteção contra SSRF).
+- Erros de integrações nunca incluem corpos de resposta ou URLs com tokens.
 
 ## Roadmap
 
@@ -394,7 +437,7 @@ curl -s -X POST localhost:8000/api/v1/automations \
 | 3 | Inteligência: IA, compatibilidade, regras eliminatórias, apresentações | ✅ Concluída |
 | 4 | Candidaturas: máquina de estados, aprovação, envio autorizado | ✅ Concluída |
 | 5 | Automação: agendador em processo separado, retentativas, resumo diário | ✅ Concluída |
-| 6 | Comunicação: OAuth de e-mail, monitoramento, notificações | ⏳ |
+| 6 | Comunicação: OAuth de e-mail, monitoramento, notificações | ✅ Concluída |
 | 7 | Indicadores: dashboard e métricas | ⏳ |
 
 ## Limitações conhecidas
@@ -439,8 +482,14 @@ curl -s -X POST localhost:8000/api/v1/automations \
   dos timeouts das chamadas externas e do prazo da reserva. Se uma tarefa passar do
   prazo, outro worker pode executá-la de novo — o que é seguro porque as tarefas são
   idempotentes, mas gasta processamento.
-- O resumo diário fica registrado no histórico de execuções; o envio como notificação
-  chega na Fase 6.
+- **E-mail:** os clientes Gmail e Outlook foram testados só com respostas HTTP simuladas;
+  valide com um app registrado no Google Cloud / Microsoft Entra. A classificação é por
+  palavras-chave (português e inglês) e pode errar; o fuso das datas extraídas é UTC.
+- A associação por domínio usa uma lista curta de sufixos (`.com.br`, `.co.uk`...), não a
+  Public Suffix List completa.
+- A validação de webhook não detecta DNS rebinding (domínio público que resolve para IP
+  interno); em produção, restrinja também a saída de rede.
+- Notificações push não estão implementadas.
 
 ## Recomendações de produção
 

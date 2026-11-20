@@ -6,12 +6,25 @@ configuração, sem o worker depender da camada HTTP.
 
 from functools import lru_cache
 
+from pydantic import SecretStr
+
 from app.ai.llm import StructuredLLM
 from app.ai.openai_client import OpenAIStructuredLLM
-from app.core.config import AIProviderName, get_settings
+from app.core.config import AIProviderName, Settings, get_settings
+from app.core.crypto import SecretCipher
 from app.integrations.application_submitters.mock import MockApplicationSubmitter
 from app.integrations.application_submitters.registry import SubmitterRegistry
+from app.integrations.email.base import EmailClient
+from app.integrations.email.oauth_clients import GmailClient, OutlookClient
+from app.integrations.email.simulated import SimulatedEmailClient
 from app.integrations.job_providers.registry import ProviderRegistry, build_default_registry
+from app.integrations.notifications.channels import (
+    ChannelRegistry,
+    SmtpEmailChannel,
+    TelegramChannel,
+    WebhookChannel,
+)
+from app.models.enums import EmailProvider
 from app.services.analysis.requirements import (
     KeywordRequirementAnalyzer,
     LLMRequirementAnalyzer,
@@ -59,3 +72,57 @@ def get_submitter_registry() -> SubmitterRegistry:
     integração de candidatura autorizada configurada."""
     simulated = [MockApplicationSubmitter()] if get_settings().enable_simulated_providers else []
     return SubmitterRegistry(simulated)
+
+
+def _secret(value: SecretStr | None) -> str | None:
+    """Valor de um SecretStr opcional; string vazia conta como ausente."""
+    if value is None:
+        return None
+    return value.get_secret_value() or None
+
+
+@lru_cache
+def get_cipher() -> SecretCipher:
+    return SecretCipher(_secret(get_settings().token_encryption_key))
+
+
+@lru_cache
+def get_email_clients() -> dict[EmailProvider, EmailClient]:
+    """Conectores de e-mail disponíveis: só os que têm credenciais OAuth configuradas."""
+    settings: Settings = get_settings()
+    clients: dict[EmailProvider, EmailClient] = {}
+    google_secret = _secret(settings.google_client_secret)
+    if settings.google_client_id and google_secret:
+        clients[EmailProvider.GMAIL] = GmailClient(
+            client_id=settings.google_client_id, client_secret=google_secret
+        )
+    microsoft_secret = _secret(settings.microsoft_client_secret)
+    if settings.microsoft_client_id and microsoft_secret:
+        clients[EmailProvider.OUTLOOK] = OutlookClient(
+            client_id=settings.microsoft_client_id, client_secret=microsoft_secret
+        )
+    if settings.enable_simulated_providers:
+        clients[EmailProvider.SIMULATED] = SimulatedEmailClient()
+    return clients
+
+
+@lru_cache
+def get_channel_registry() -> ChannelRegistry:
+    settings = get_settings()
+    return ChannelRegistry(
+        [
+            SmtpEmailChannel(
+                host=settings.smtp_host,
+                port=settings.smtp_port,
+                username=settings.smtp_username,
+                password=_secret(settings.smtp_password),
+                sender=settings.smtp_from,
+                timeout_seconds=settings.notification_timeout_seconds,
+            ),
+            TelegramChannel(
+                bot_token=_secret(settings.telegram_bot_token),
+                timeout_seconds=settings.notification_timeout_seconds,
+            ),
+            WebhookChannel(timeout_seconds=settings.notification_timeout_seconds),
+        ]
+    )

@@ -24,7 +24,7 @@ from app.integrations.application_submitters.base import (
 from app.integrations.application_submitters.registry import SubmitterRegistry
 from app.models.analysis import CoverLetter
 from app.models.application import Application
-from app.models.enums import ApplicationMode, ApplicationStatus, EventActor
+from app.models.enums import ApplicationMode, ApplicationStatus, EventActor, NotificationEvent
 from app.models.job import JobOpportunity
 from app.models.profile import Resume
 from app.schemas.application import ApplicationSettingsIn
@@ -32,6 +32,7 @@ from app.services import job_service, profile_service
 from app.services.applications import application_service, policy
 from app.services.applications.state_machine import transition
 from app.services.audit_service import record_audit_event
+from app.services.communication import notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,15 @@ def submit_application(
             "confirmation_id": result.confirmation_id,
             "confirmation_source": result.confirmation_source,
         },
+    )
+    notification_service.notify(
+        session,
+        user_id,
+        NotificationEvent.APPLICATION_SUBMITTED,
+        title="Candidatura enviada",
+        body=f"{job.title} — {job.company}. Confirmação: {result.confirmation_id}",
+        data={"application_id": str(application.id)},
+        dedup_key=f"submitted:{application.id}",
     )
     record_audit_event(
         session,
@@ -196,6 +206,14 @@ def _mark_error(
         actor=actor,
         event_type="submission_failed",
         details={"outcome_unknown": outcome_unknown},
+    )
+    notification_service.notify(
+        session,
+        application.user_id,
+        NotificationEvent.SUBMISSION_FAILED,
+        title="Falha no envio da candidatura",
+        body=error[:300],
+        data={"application_id": str(application.id), "outcome_unknown": outcome_unknown},
     )
     record_audit_event(
         session,

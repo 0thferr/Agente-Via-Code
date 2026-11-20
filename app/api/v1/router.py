@@ -6,7 +6,10 @@ from app.api.v1.routes import (
     auth,
     automations,
     cover_letters,
+    integrations,
     jobs,
+    messages,
+    notifications,
     profile,
     system,
 )
@@ -20,3 +23,6 @@ api_router.include_router(cover_letters.router)
 api_router.include_router(ai.router)
 api_router.include_router(applications.router)
 api_router.include_router(automations.router)
+api_router.include_router(integrations.router)
+api_router.include_router(messages.router)
+api_router.include_router(notifications.router)

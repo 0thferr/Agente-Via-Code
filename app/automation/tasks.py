@@ -7,23 +7,28 @@ duas vezes não duplica nada.
 
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
+from app.core.crypto import SecretCipher
 from app.core.errors import ConflictError, IntegrationError, ValidationError
 from app.integrations.application_submitters.registry import SubmitterRegistry
+from app.integrations.email.base import EmailClient
 from app.integrations.job_providers.registry import ProviderRegistry
+from app.integrations.notifications.channels import ChannelRegistry
 from app.models.analysis import JobAnalysis
 from app.models.application import Application
 from app.models.enums import (
     AnalysisStatus,
     ApplicationStatus,
     AutomationTask,
+    EmailProvider,
     EventActor,
+    NotificationEvent,
     Recommendation,
 )
 from app.models.job import JobOpportunity
@@ -34,6 +39,7 @@ from app.services import job_service
 from app.services.analysis import analysis_service
 from app.services.analysis.requirements import RequirementAnalyzer
 from app.services.applications import application_service, submission_service
+from app.services.communication import email_service, notification_service
 from app.services.cover_letters.writers import CoverLetterWriter
 
 SUMMARY_WINDOW = timedelta(hours=24)
@@ -45,6 +51,10 @@ class TaskContext:
     analyzer: RequirementAnalyzer
     writer: CoverLetterWriter
     submitters: SubmitterRegistry
+    email_clients: dict[EmailProvider, EmailClient] = field(default_factory=dict)
+    cipher: SecretCipher = field(default_factory=lambda: SecretCipher(None))
+    channels: ChannelRegistry = field(default_factory=lambda: ChannelRegistry([]))
+    email_lookback: timedelta = timedelta(days=14)
 
 
 TaskHandler = Callable[[Session, TaskContext, uuid.UUID, dict[str, Any]], dict[str, Any]]
@@ -159,7 +169,44 @@ def submit_applications(
 def daily_summary(
     session: Session, context: TaskContext, user_id: uuid.UUID, config: dict[str, Any]
 ) -> dict[str, Any]:
-    return build_activity_summary(session, user_id, since=datetime.now(UTC) - SUMMARY_WINDOW)
+    now = datetime.now(UTC)
+    summary = build_activity_summary(session, user_id, since=now - SUMMARY_WINDOW)
+    notification_service.notify(
+        session,
+        user_id,
+        NotificationEvent.DAILY_SUMMARY,
+        title="Resumo diário do JobPilot",
+        body=(
+            f"Vagas encontradas: {summary['jobs_discovered']} · "
+            f"analisadas: {summary['jobs_analyzed']} · "
+            f"candidaturas enviadas: {summary['applications_submitted']} · "
+            f"aguardando aprovação: {summary['awaiting_approval']}"
+        ),
+        data=summary,
+        dedup_key=f"daily_summary:{now.date().isoformat()}",
+    )
+    session.commit()
+    return summary
+
+
+def check_emails(
+    session: Session, context: TaskContext, user_id: uuid.UUID, config: dict[str, Any]
+) -> dict[str, Any]:
+    return email_service.sync_user_accounts(
+        session,
+        context.email_clients,
+        context.cipher,
+        user_id,
+        context.email_lookback,
+        datetime.now(UTC),
+    )
+
+
+def check_deadlines(
+    session: Session, context: TaskContext, user_id: uuid.UUID, config: dict[str, Any]
+) -> dict[str, Any]:
+    created = email_service.notify_upcoming_deadlines(session, user_id, datetime.now(UTC))
+    return {"deadline_notifications": created}
 
 
 def build_activity_summary(session: Session, user_id: uuid.UUID, since: datetime) -> dict[str, Any]:
@@ -199,4 +246,6 @@ TASK_HANDLERS: dict[AutomationTask, TaskHandler] = {
     AutomationTask.PREPARE_APPLICATIONS: prepare_applications,
     AutomationTask.SUBMIT_APPLICATIONS: submit_applications,
     AutomationTask.DAILY_SUMMARY: daily_summary,
+    AutomationTask.CHECK_EMAILS: check_emails,
+    AutomationTask.CHECK_DEADLINES: check_deadlines,
 }

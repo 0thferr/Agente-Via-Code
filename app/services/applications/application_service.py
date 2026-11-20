@@ -25,6 +25,7 @@ from app.models.enums import (
     ApprovalDecision,
     ConfirmationSource,
     EventActor,
+    NotificationEvent,
     Recommendation,
     RequirementStatus,
     ResumeImportStatus,
@@ -48,6 +49,7 @@ from app.services.applications.state_machine import (
     transition,
 )
 from app.services.audit_service import record_audit_event
+from app.services.communication import notification_service
 from app.services.cover_letters import cover_letter_service
 from app.services.cover_letters.writers import CoverLetterWriter
 
@@ -281,6 +283,15 @@ def _route_after_preparation(
         ApplicationStatus.AWAITING_APPROVAL,
         actor=EventActor.AGENT,
         details={"approval_required_because": blockers},
+    )
+    notification_service.notify(
+        session,
+        application.user_id,
+        NotificationEvent.APPROVAL_PENDING,
+        title="Candidatura aguardando sua aprovação",
+        body=f"{job.title} — {job.company} (nota {application.compatibility_score})",
+        data={"application_id": str(application.id)},
+        dedup_key=f"approval_pending:{application.id}",
     )
 
 

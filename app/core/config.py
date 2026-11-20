@@ -59,6 +59,27 @@ class Settings(BaseSettings):
     worker_max_jobs_per_tick: int = Field(default=5, ge=1, le=50)
     stale_submission_minutes: int = Field(default=15, ge=5)
 
+    # Chave Fernet para cifrar tokens OAuth e segredos de webhook. Gere com:
+    # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    token_encryption_key: SecretStr | None = None
+
+    # OAuth de e-mail (registre um app no Google Cloud / Microsoft Entra).
+    oauth_redirect_base_url: str = "http://localhost:8000"
+    google_client_id: str | None = None
+    google_client_secret: SecretStr | None = None
+    microsoft_client_id: str | None = None
+    microsoft_client_secret: SecretStr | None = None
+    email_sync_lookback_days: int = Field(default=14, ge=1, le=90)
+
+    # Canais de notificação (opcionais).
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    telegram_bot_token: SecretStr | None = None
+    notification_timeout_seconds: float = Field(default=10, gt=0)
+
     cors_origins: list[str] = Field(default_factory=list)
 
     @field_validator("jwt_secret_key")

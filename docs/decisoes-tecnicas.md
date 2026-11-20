@@ -149,3 +149,26 @@ Se o worker ficar parado por um dia, ele roda uma vez ao voltar, não 24 vezes.
 
 **`app/wiring.py`.** As fábricas de componentes (IA, provedores, enviadores) saíram de
 `app/api/deps.py` para que o worker use a mesma configuração sem depender da camada HTTP.
+
+## Fase 6 — Comunicação
+
+**Somente leitura e só metadados.** Os escopos OAuth não permitem enviar e-mails, então
+"nunca responder recrutadores sem aprovação" é garantido pela permissão, não só pelo
+código. Guardamos assunto, remetente, trecho curto e datas; o corpo não é baixado
+(minimização, LGPD).
+
+**OAuth com `state` + PKCE.** O `state` (guardado só como hash) protege contra CSRF e vale
+uma vez; o PKCE impede que um código interceptado seja trocado por tokens.
+
+**Tokens cifrados com Fernet.** Um vazamento do banco não expõe tokens de e-mail. A chave
+fica fora do banco (`TOKEN_ENCRYPTION_KEY`).
+
+**Classificação por regras, sem IA.** É previsível, explicável e não envia o conteúdo do
+e-mail a terceiros. A IA pode ser adicionada depois com as mesmas defesas da Fase 3.
+
+**Associação conservadora.** Só associa sozinho com um candidato claro; na dúvida, pede
+validação. Um e-mail associado errado mudaria a etapa da candidatura errada.
+
+**Notificar ≠ entregar.** `notify` só grava no banco, na mesma transação do fato que gerou
+a notificação; o worker faz as entregas externas com retentativas. Assim, uma API externa
+lenta não atrasa requisições, e não há notificação de um fato que foi desfeito (rollback).

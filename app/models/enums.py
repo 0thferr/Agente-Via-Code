@@ -153,3 +153,58 @@ class JobRunStatus(StrEnum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"  # esgotou as tentativas
+
+
+class EmailProvider(StrEnum):
+    GMAIL = "gmail"
+    OUTLOOK = "outlook"
+    SIMULATED = "simulated"
+
+
+class EmailAccountStatus(StrEnum):
+    ACTIVE = "active"
+    ERROR = "error"
+
+
+class MessageCategory(StrEnum):
+    INTERVIEW_INVITE = "interview_invite"
+    ASSESSMENT = "assessment"
+    STAGE_CHANGE = "stage_change"
+    OFFER = "offer"
+    REJECTION = "rejection"
+    OTHER_RECRUITING = "other_recruiting"
+    NOT_RECRUITING = "not_recruiting"
+
+
+class MatchStatus(StrEnum):
+    MATCHED = "matched"
+    NEEDS_REVIEW = "needs_review"  # associação incerta: o usuário precisa validar
+    UNMATCHED = "unmatched"
+    NOT_APPLICABLE = "not_applicable"  # mensagem não é de recrutamento
+
+
+class NotificationEvent(StrEnum):
+    HIGH_MATCH_JOB = "high_match_job"
+    APPROVAL_PENDING = "approval_pending"
+    APPLICATION_SUBMITTED = "application_submitted"
+    SUBMISSION_FAILED = "submission_failed"
+    INTERVIEW_INVITE = "interview_invite"
+    ASSESSMENT_RECEIVED = "assessment_received"
+    OFFER_RECEIVED = "offer_received"
+    MESSAGE_NEEDS_REVIEW = "message_needs_review"
+    DEADLINE_APPROACHING = "deadline_approaching"
+    DAILY_SUMMARY = "daily_summary"
+
+
+class NotificationChannel(StrEnum):
+    EMAIL = "email"
+    TELEGRAM = "telegram"
+    WEBHOOK = "webhook"
+    PUSH = "push"
+
+
+class DeliveryStatus(StrEnum):
+    PENDING = "pending"
+    SENT = "sent"
+    FAILED = "failed"
+    SKIPPED = "skipped"

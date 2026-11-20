@@ -9,6 +9,14 @@ from app.models.application import (
 )
 from app.models.audit import AuditLog
 from app.models.automation import AutomationRule, ExecutionLog, ScheduledJob
+from app.models.communication import (
+    EmailAccount,
+    Notification,
+    NotificationDelivery,
+    NotificationPreferences,
+    OAuthState,
+    RecruitmentMessage,
+)
 from app.models.job import JobOpportunity, JobSource
 from app.models.profile import (
     Certification,
@@ -32,12 +40,18 @@ __all__ = [
     "Certification",
     "CoverLetter",
     "Education",
+    "EmailAccount",
     "ExecutionLog",
     "JobAnalysis",
     "JobOpportunity",
     "JobSource",
     "Language",
+    "Notification",
+    "NotificationDelivery",
+    "NotificationPreferences",
+    "OAuthState",
     "ProfessionalProfile",
+    "RecruitmentMessage",
     "RefreshToken",
     "Resume",
     "ScheduledJob",

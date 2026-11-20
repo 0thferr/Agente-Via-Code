@@ -22,6 +22,7 @@ from app.models.automation import AutomationRule, ExecutionLog, ScheduledJob
 from app.models.enums import ApplicationStatus, EventActor, JobRunStatus
 from app.services.applications.state_machine import transition
 from app.services.audit_service import record_audit_event
+from app.services.communication import notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,7 @@ class TickResult:
     enqueued: int = 0
     executed: int = 0
     recovered_submissions: int = 0
+    notifications_sent: int = 0
 
 
 def compute_next_run(rule: AutomationRule, after: datetime) -> datetime:
@@ -192,6 +194,10 @@ def run_tick(
                 break
             execute_job(session, context, job, now)
             result.executed += 1
+    with session_factory() as session:
+        result.notifications_sent = notification_service.deliver_pending(
+            session, context.channels, context.cipher, now
+        )
     return result
 
 

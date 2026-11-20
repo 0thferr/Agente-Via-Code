@@ -21,7 +21,10 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.db.session import get_session_factory
 from app.wiring import (
+    get_channel_registry,
+    get_cipher,
     get_cover_letter_writer,
+    get_email_clients,
     get_provider_registry,
     get_requirement_analyzer,
     get_submitter_registry,
@@ -36,6 +39,10 @@ def build_task_context() -> TaskContext:
         analyzer=get_requirement_analyzer(),
         writer=get_cover_letter_writer(),
         submitters=get_submitter_registry(),
+        email_clients=get_email_clients(),
+        cipher=get_cipher(),
+        channels=get_channel_registry(),
+        email_lookback=timedelta(days=get_settings().email_sync_lookback_days),
     )
 
 
@@ -58,7 +65,7 @@ def main() -> None:
             stale_submission_after=timedelta(minutes=settings.stale_submission_minutes),
             max_jobs=settings.worker_max_jobs_per_tick,
         )
-        if result.enqueued or result.executed or result.recovered_submissions:
+        if any(vars(result).values()):
             logger.info("worker_tick", extra=vars(result))
 
     scheduler = BlockingScheduler(timezone=UTC)

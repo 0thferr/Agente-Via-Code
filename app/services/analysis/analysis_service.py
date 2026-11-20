@@ -18,7 +18,13 @@ from app.ai.llm import AIProviderError
 from app.ai.prompt_safety import detect_injection_signals
 from app.core.errors import IntegrationError, NotFoundError, ValidationError
 from app.models.analysis import AIPreferences, JobAnalysis
-from app.models.enums import AnalysisStatus, FitStatus, Recommendation, RequirementStatus
+from app.models.enums import (
+    AnalysisStatus,
+    FitStatus,
+    NotificationEvent,
+    Recommendation,
+    RequirementStatus,
+)
 from app.models.job import JobOpportunity
 from app.schemas.analysis import AIPreferencesIn
 from app.services import job_service, profile_service
@@ -40,6 +46,7 @@ from app.services.analysis.scoring import (
     requirements_score,
 )
 from app.services.audit_service import record_audit_event
+from app.services.communication import notification_service
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +55,7 @@ DETERMINISTIC_CONFIDENCE = 1.0
 RULES_PROVIDER = "rules"
 RULES_MODEL = "deterministic-v1"
 STRONG_SKILLS_SCORE = 70
+HIGH_MATCH_SCORE = 80
 WEAK_SKILLS_SCORE = 40
 
 
@@ -142,6 +150,7 @@ def analyze_job(
 
     session.add(analysis)
     session.flush()
+    _notify_high_match(session, analysis, job)
     record_audit_event(
         session,
         action="job.analyzed",
@@ -186,6 +195,25 @@ def get_latest_analysis(
 
 
 # --- Etapas internas ------------------------------------------------------------------
+
+
+def _notify_high_match(session: Session, analysis: JobAnalysis, job: JobOpportunity) -> None:
+    is_high_match = (
+        analysis.recommendation is Recommendation.QUALIFIED
+        and analysis.score is not None
+        and analysis.score >= HIGH_MATCH_SCORE
+    )
+    if not is_high_match:
+        return
+    notification_service.notify(
+        session,
+        analysis.user_id,
+        NotificationEvent.HIGH_MATCH_JOB,
+        title=f"Vaga com alta compatibilidade ({analysis.score})",
+        body=f"{job.title} — {job.company}",
+        data={"job_id": str(job.id), "analysis_id": str(analysis.id)},
+        dedup_key=f"high_match:{job.id}",
+    )
 
 
 def _analyze_requirements(
