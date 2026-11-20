@@ -14,10 +14,19 @@ from urllib.parse import urlencode
 
 import httpx
 
-from app.integrations.email.base import EmailClient, EmailMessage, EmailProviderError, OAuthTokens
+from app.integrations.email.base import (
+    EmailClient,
+    EmailMessage,
+    EmailProviderError,
+    MessageBatch,
+    OAuthTokens,
+)
 from app.models.enums import EmailProvider
 
 MAX_SNIPPET_LENGTH = 300
+LIST_PAGE_SIZE = 100
+# Teto de páginas por sincronização: protege contra caixas enormes e laços infinitos.
+MAX_LIST_PAGES = 20
 
 
 class _OAuthEmailClient(EmailClient):
@@ -120,41 +129,56 @@ class GmailClient(_OAuthEmailClient):
         body = self._request("GET", f"{self.api_base}/profile", headers=self._auth(access_token))
         return body["emailAddress"]
 
-    def list_messages(self, access_token: str, since: datetime, limit: int) -> list[EmailMessage]:
+    def list_messages(
+        self, access_token: str, since: datetime, limit: int, known_ids: set[str]
+    ) -> MessageBatch:
+        """Percorre as páginas de IDs (baratas) e baixa os metadados só das mensagens novas."""
         headers = self._auth(access_token)
-        listing = self._request(
+        params: dict[str, object] = {
+            "q": f"after:{int(since.timestamp())}",
+            "maxResults": LIST_PAGE_SIZE,
+        }
+        messages: list[EmailMessage] = []
+        for _ in range(MAX_LIST_PAGES):
+            listing = self._request(
+                "GET", f"{self.api_base}/messages", headers=headers, params=params
+            )
+            new_ids = [
+                item["id"] for item in listing.get("messages", []) if item["id"] not in known_ids
+            ]
+            for message_id in new_ids:
+                if len(messages) == limit:
+                    return MessageBatch(messages, has_more=True)
+                messages.append(self._message_metadata(headers, message_id))
+            page_token = listing.get("nextPageToken")
+            if not page_token:
+                return MessageBatch(messages, has_more=False)
+            params["pageToken"] = page_token
+        return MessageBatch(messages, has_more=True)
+
+    def _message_metadata(self, headers: dict[str, str], message_id: str) -> EmailMessage:
+        detail = self._request(
             "GET",
-            f"{self.api_base}/messages",
+            f"{self.api_base}/messages/{message_id}",
             headers=headers,
-            params={"q": f"after:{int(since.timestamp())}", "maxResults": limit},
+            params=[
+                ("format", "metadata"),
+                ("metadataHeaders", "From"),
+                ("metadataHeaders", "Subject"),
+            ],
         )
-        messages = []
-        for item in listing.get("messages", []):
-            detail = self._request(
-                "GET",
-                f"{self.api_base}/messages/{item['id']}",
-                headers=headers,
-                params=[
-                    ("format", "metadata"),
-                    ("metadataHeaders", "From"),
-                    ("metadataHeaders", "Subject"),
-                ],
-            )
-            header_values = {
-                header["name"].lower(): header["value"]
-                for header in detail.get("payload", {}).get("headers", [])
-            }
-            messages.append(
-                EmailMessage(
-                    provider_message_id=detail["id"],
-                    thread_id=detail.get("threadId"),
-                    from_address=header_values.get("from", ""),
-                    subject=header_values.get("subject", ""),
-                    snippet=detail.get("snippet", "")[:MAX_SNIPPET_LENGTH],
-                    received_at=datetime.fromtimestamp(int(detail["internalDate"]) / 1000, UTC),
-                )
-            )
-        return messages
+        header_values = {
+            header["name"].lower(): header["value"]
+            for header in detail.get("payload", {}).get("headers", [])
+        }
+        return EmailMessage(
+            provider_message_id=detail["id"],
+            thread_id=detail.get("threadId"),
+            from_address=header_values.get("from", ""),
+            subject=header_values.get("subject", ""),
+            snippet=detail.get("snippet", "")[:MAX_SNIPPET_LENGTH],
+            received_at=datetime.fromtimestamp(int(detail["internalDate"]) / 1000, UTC),
+        )
 
 
 class OutlookClient(_OAuthEmailClient):
@@ -168,30 +192,42 @@ class OutlookClient(_OAuthEmailClient):
         body = self._request("GET", self.api_base, headers=self._auth(access_token))
         return body.get("mail") or body["userPrincipalName"]
 
-    def list_messages(self, access_token: str, since: datetime, limit: int) -> list[EmailMessage]:
+    def list_messages(
+        self, access_token: str, since: datetime, limit: int, known_ids: set[str]
+    ) -> MessageBatch:
         since_iso = since.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        body = self._request(
-            "GET",
-            f"{self.api_base}/messages",
-            headers=self._auth(access_token),
-            params={
-                "$filter": f"receivedDateTime ge {since_iso}",
-                "$select": "id,conversationId,subject,from,receivedDateTime,bodyPreview",
-                "$orderby": "receivedDateTime desc",
-                "$top": limit,
-            },
-        )
-        return [
-            EmailMessage(
-                provider_message_id=item["id"],
-                thread_id=item.get("conversationId"),
-                from_address=_format_sender(item.get("from", {}).get("emailAddress", {})),
-                subject=item.get("subject") or "",
-                snippet=(item.get("bodyPreview") or "")[:MAX_SNIPPET_LENGTH],
-                received_at=datetime.fromisoformat(item["receivedDateTime"].replace("Z", "+00:00")),
-            )
-            for item in body.get("value", [])
-        ]
+        url: str | None = f"{self.api_base}/messages"
+        params: dict[str, object] | None = {
+            "$filter": f"receivedDateTime ge {since_iso}",
+            "$select": "id,conversationId,subject,from,receivedDateTime,bodyPreview",
+            "$orderby": "receivedDateTime desc",
+            "$top": LIST_PAGE_SIZE,
+        }
+        messages: list[EmailMessage] = []
+        for _ in range(MAX_LIST_PAGES):
+            body = self._request("GET", url, headers=self._auth(access_token), params=params)
+            for item in body.get("value", []):
+                if item["id"] in known_ids:
+                    continue
+                if len(messages) == limit:
+                    return MessageBatch(messages, has_more=True)
+                messages.append(_outlook_message(item))
+            # O nextLink já traz todos os parâmetros da próxima página.
+            url, params = body.get("@odata.nextLink"), None
+            if not url:
+                return MessageBatch(messages, has_more=False)
+        return MessageBatch(messages, has_more=True)
+
+
+def _outlook_message(item: dict) -> EmailMessage:
+    return EmailMessage(
+        provider_message_id=item["id"],
+        thread_id=item.get("conversationId"),
+        from_address=_format_sender(item.get("from", {}).get("emailAddress", {})),
+        subject=item.get("subject") or "",
+        snippet=(item.get("bodyPreview") or "")[:MAX_SNIPPET_LENGTH],
+        received_at=datetime.fromisoformat(item["receivedDateTime"].replace("Z", "+00:00")),
+    )
 
 
 def _format_sender(sender: dict) -> str:

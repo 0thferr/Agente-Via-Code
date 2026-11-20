@@ -255,10 +255,18 @@ def sync_account(
 ) -> dict[str, int]:
     access_token = _valid_access_token(session, client, cipher, account, now)
     since = account.last_synced_at or (now - lookback)
-    messages = client.list_messages(access_token, since, MAX_MESSAGES_PER_SYNC)
+    known_ids = set(
+        session.scalars(
+            select(RecruitmentMessage.provider_message_id).where(
+                RecruitmentMessage.email_account_id == account.id,
+                RecruitmentMessage.received_at >= since,
+            )
+        )
+    )
+    batch = client.list_messages(access_token, since, MAX_MESSAGES_PER_SYNC, known_ids)
     candidates = _tracked_candidates(session, account.user_id)
     counts = {"new_messages": 0, "matched": 0, "needs_review": 0}
-    for message in messages:
+    for message in batch.messages:
         stored = _store_message(session, account, message, candidates)
         if stored is None:
             continue  # já processada antes (idempotente)
@@ -277,7 +285,10 @@ def sync_account(
                 data={"message_id": str(stored.id)},
                 dedup_key=f"message_review:{stored.id}",
             )
-    account.last_synced_at = now
+    # Só avança o cursor quando todas as mensagens do período foram lidas; senão a
+    # próxima sincronização continua de onde parou (as já gravadas são ignoradas).
+    if not batch.has_more:
+        account.last_synced_at = now
     account.status = EmailAccountStatus.ACTIVE
     account.last_error = None
     session.commit()
@@ -291,7 +302,8 @@ def _store_message(
     candidates: list[Candidate],
 ) -> RecruitmentMessage | None:
     classification = classify(message.subject, message.snippet, message.received_at)
-    if classification.category is MessageCategory.NOT_RECRUITING:
+    is_recruiting = classification.category is not MessageCategory.NOT_RECRUITING
+    if not is_recruiting:
         match_status, application_id, confidence = MatchStatus.NOT_APPLICABLE, None, 0.0
     else:
         result = match_message(message.from_address, message.subject, message.snippet, candidates)
@@ -310,10 +322,13 @@ def _store_message(
             user_id=account.user_id,
             email_account_id=account.id,
             provider_message_id=message.provider_message_id,
-            thread_id=message.thread_id,
-            from_address=message.from_address[:320],
-            subject=message.subject[:300],
-            snippet=message.snippet[:300],
+            # E-mail que não é de recrutamento: guardamos só a referência (id e data),
+            # necessária para não processá-lo de novo. Remetente, assunto e trecho
+            # não são armazenados (minimização de dados).
+            thread_id=message.thread_id if is_recruiting else None,
+            from_address=message.from_address[:320] if is_recruiting else "",
+            subject=message.subject[:300] if is_recruiting else "",
+            snippet=message.snippet[:300] if is_recruiting else "",
             received_at=message.received_at,
             category=classification.category,
             requires_response=classification.requires_response,
@@ -412,6 +427,9 @@ def list_messages(
     conditions = [RecruitmentMessage.user_id == user_id]
     if filters.category:
         conditions.append(RecruitmentMessage.category == filters.category)
+    else:
+        # Mensagens fora de recrutamento são só referências internas de deduplicação.
+        conditions.append(RecruitmentMessage.category != MessageCategory.NOT_RECRUITING)
     if filters.match_status:
         conditions.append(RecruitmentMessage.match_status == filters.match_status)
     if filters.application_id:

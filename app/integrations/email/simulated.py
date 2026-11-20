@@ -5,7 +5,7 @@ As mensagens citam as empresas fictícias do provedor de vagas simulado.
 
 from datetime import UTC, datetime, timedelta
 
-from app.integrations.email.base import EmailClient, EmailMessage
+from app.integrations.email.base import EmailClient, EmailMessage, MessageBatch
 from app.models.enums import EmailProvider
 
 SIMULATED_ADDRESS = "caixa-simulada@jobpilot.example"
@@ -21,9 +21,16 @@ class SimulatedEmailClient(EmailClient):
     def account_email(self, access_token: str) -> str:
         return SIMULATED_ADDRESS
 
-    def list_messages(self, access_token: str, since: datetime, limit: int) -> list[EmailMessage]:
+    def list_messages(
+        self, access_token: str, since: datetime, limit: int, known_ids: set[str]
+    ) -> MessageBatch:
         messages = self._messages if self._messages is not None else default_messages()
-        return [message for message in messages if message.received_at >= since][:limit]
+        new = [
+            message
+            for message in messages
+            if message.received_at >= since and message.provider_message_id not in known_ids
+        ]
+        return MessageBatch(new[:limit], has_more=len(new) > limit)
 
 
 def default_messages(now: datetime | None = None) -> list[EmailMessage]:

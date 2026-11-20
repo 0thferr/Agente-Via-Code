@@ -26,10 +26,13 @@ class RedisRateLimiter:
     def hit(self, key: str, limit: int, window_seconds: int) -> None:
         redis_key = f"rate_limit:{key}"
         try:
+            # SET ... EX ... NX cria o contador com prazo só na primeira tentativa da
+            # janela; INCR preserva o prazo. Funciona em qualquer versão do Redis
+            # (EXPIRE ... NX exigiria Redis 7+).
             pipeline = self._client.pipeline()
+            pipeline.set(redis_key, 0, ex=window_seconds, nx=True)
             pipeline.incr(redis_key)
-            pipeline.expire(redis_key, window_seconds, nx=True)
-            attempts, _ = pipeline.execute()
+            _, attempts = pipeline.execute()
         except RedisError as exc:
             # Falha fechada: sem Redis não conseguimos proteger o login, então recusamos.
             raise RateLimitExceededError(

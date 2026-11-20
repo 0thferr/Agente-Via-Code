@@ -31,6 +31,18 @@ class EmailMessage:
     received_at: datetime
 
 
+@dataclass(frozen=True)
+class MessageBatch:
+    """Mensagens novas de uma sincronização.
+
+    `has_more` indica que o limite foi atingido e ainda há mensagens no período:
+    nesse caso o cursor da conta não avança, e a próxima sincronização continua.
+    """
+
+    messages: list[EmailMessage]
+    has_more: bool
+
+
 class EmailClient(ABC):
     provider: EmailProvider
     uses_oauth: bool = True
@@ -49,5 +61,6 @@ class EmailClient(ABC):
 
     @abstractmethod
     def list_messages(
-        self, access_token: str, since: datetime, limit: int
-    ) -> list[EmailMessage]: ...
+        self, access_token: str, since: datetime, limit: int, known_ids: set[str]
+    ) -> MessageBatch:
+        """Mensagens recebidas desde `since`, ignorando as já conhecidas (`known_ids`)."""

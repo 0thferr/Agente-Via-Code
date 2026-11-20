@@ -253,7 +253,7 @@ def test_gmail_reads_only_metadata():
             },
         )
 
-    messages = gmail(handler).list_messages("token", NOW, 10)
+    messages = gmail(handler).list_messages("token", NOW, 10, known_ids=set()).messages
 
     assert messages[0].subject == "Entrevista" and messages[0].from_address == "rh@x.example"
     assert requested[1].params["format"] == "metadata"  # o corpo nunca é baixado
@@ -278,7 +278,7 @@ def test_outlook_parses_graph_messages():
         transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body)),
     )
 
-    message = client.list_messages("token", NOW, 10)[0]
+    message = client.list_messages("token", NOW, 10, known_ids=set()).messages[0]
 
     assert message.from_address == "RH <rh@y.example>"
     assert message.received_at == datetime(2026, 11, 20, 10, 0, tzinfo=UTC)

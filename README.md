@@ -424,7 +424,10 @@ curl -s -X POST localhost:8000/api/v1/automations \
 `Mail.Read`. O sistema **não tem permissão de envio**: nunca responde recrutadores.
 
 - São lidos e guardados só remetente, assunto, um trecho de até 300 caracteres e datas.
-  **O corpo do e-mail não é baixado nem armazenado.**
+  **O corpo do e-mail não é baixado nem armazenado.** De e-mails que não são de
+  recrutamento, guardamos apenas o ID e a data (para não processá-los de novo).
+- A sincronização percorre todas as páginas do período (até 50 mensagens novas por vez);
+  se houver mais, o cursor não avança e a próxima sincronização continua de onde parou.
 - Tokens ficam **cifrados** (Fernet, `TOKEN_ENCRYPTION_KEY`) e nunca aparecem em logs.
 - Classificação por regras: convite para entrevista, teste técnico, mudança de etapa,
   proposta, recusa; datas (`dd/mm[/aaaa]` + horário) e prazos ("até", "prazo").

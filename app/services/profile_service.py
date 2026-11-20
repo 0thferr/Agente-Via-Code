@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -61,6 +62,10 @@ def save_profile(
         setattr(profile, field, [])
     session.flush()
 
+    # Sem isso, alterar só as listas (ex.: competências) não muda nenhuma coluna do
+    # perfil, o UPDATE não acontece e updated_at — usado como versão do perfil para
+    # reaproveitar análises — fica igual.
+    profile.updated_at = datetime.now(UTC)
     profile.experiences = [WorkExperience(**item.model_dump()) for item in data.experiences]
     profile.educations = [Education(**item.model_dump()) for item in data.educations]
     profile.skills = [Skill(**item.model_dump()) for item in data.skills]

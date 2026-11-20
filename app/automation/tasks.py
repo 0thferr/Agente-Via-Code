@@ -43,6 +43,7 @@ from app.services.communication import email_service, notification_service
 from app.services.cover_letters.writers import CoverLetterWriter
 
 SUMMARY_WINDOW = timedelta(hours=24)
+MAX_ANALYSIS_FAILURES = 3
 
 
 @dataclass(frozen=True)
@@ -84,10 +85,23 @@ def analyze_jobs(
 ) -> dict[str, Any]:
     """Analisa vagas que ainda não têm nenhuma análise."""
     limit = BatchConfig.model_validate(config).max_items
-    already_analyzed = exists().where(JobAnalysis.job_id == JobOpportunity.id)
+    # Análises que falharam não contam como "analisada": a vaga volta para a fila,
+    # até MAX_ANALYSIS_FAILURES tentativas (para uma vaga problemática não travar as demais).
+    already_analyzed = exists().where(
+        JobAnalysis.job_id == JobOpportunity.id, JobAnalysis.status != AnalysisStatus.FAILED
+    )
+    failures = (
+        select(func.count())
+        .where(JobAnalysis.job_id == JobOpportunity.id, JobAnalysis.status == AnalysisStatus.FAILED)
+        .scalar_subquery()
+    )
     job_ids = session.scalars(
         select(JobOpportunity.id)
-        .where(JobOpportunity.user_id == user_id, ~already_analyzed)
+        .where(
+            JobOpportunity.user_id == user_id,
+            ~already_analyzed,
+            failures < MAX_ANALYSIS_FAILURES,
+        )
         .order_by(JobOpportunity.created_at.desc())
         .limit(limit)
     ).all()

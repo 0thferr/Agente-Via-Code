@@ -234,3 +234,19 @@ investigar abuso), mas perdem o vínculo com a pessoa e não contêm dados de co
 
 **POST em vez de DELETE com corpo.** Alguns clientes e proxies descartam o corpo de
 requisições DELETE, e a senha precisa ir no corpo (nunca na URL).
+
+## Correções da revisão de código (PR #1)
+
+- **Sincronização de e-mail paginada.** Antes, só as 50 mensagens mais recentes eram
+  lidas e o cursor avançava, perdendo as demais para sempre. Agora as páginas são
+  percorridas, as mensagens já gravadas são ignoradas (sem baixar de novo) e o cursor só
+  avança quando o período foi lido por completo.
+- **E-mails fora de recrutamento guardam só a referência** (id e data). A referência é
+  necessária para a deduplicação e a paginação; o conteúdo, não.
+- **Prazos só em e-mails de recrutamento e por palavra inteira** ("ate" não casa mais
+  com "candidate").
+- **Versão do perfil sempre atualizada ao salvar**, mesmo quando só as listas mudam;
+  senão análises antigas eram reaproveitadas.
+- **Vagas com análise falha voltam para a fila do worker**, até 3 tentativas.
+- **Rate limiter compatível com qualquer Redis:** `SET ... EX ... NX` + `INCR` no lugar
+  de `EXPIRE ... NX` (que exige Redis 7).

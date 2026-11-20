@@ -39,7 +39,8 @@ CATEGORY_KEYWORDS: list[tuple[MessageCategory, tuple[str, ...]]] = [
 ]
 RECRUITING_HINTS = ("candidatura", "vaga", "processo seletivo", "recrutamento", "application")
 RESPONSE_HINTS = ("confirme", "confirmar", "disponibilidade", "responda", "please confirm", "?")
-DEADLINE_HINTS = ("prazo", "ate o dia", "ate ", "deadline", "entregar ate", "until")
+# Palavras inteiras (\b): "ate" não pode casar com "candidate" ou "update".
+DEADLINE_PATTERN = re.compile(r"\b(prazo|ate|deadline|until)\b")
 
 _NUMERIC_DATE = re.compile(r"\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b")
 _TIME = re.compile(r"\b(\d{1,2})(?:h|:)(\d{2})?\b")
@@ -67,7 +68,8 @@ def classify(subject: str, snippet: str, received_at: datetime) -> Classificatio
         )
     raw_text = f"{subject} {snippet}".lower()
     dates = extract_dates(f"{subject} {snippet}", received_at)
-    has_deadline_word = any(hint in normalize_text(raw_text) for hint in DEADLINE_HINTS)
+    has_deadline_word = bool(DEADLINE_PATTERN.search(text))
+    is_recruiting = category is not MessageCategory.NOT_RECRUITING
     requires_response = category is not MessageCategory.NOT_RECRUITING and (
         category in {MessageCategory.INTERVIEW_INVITE, MessageCategory.OFFER}
         or any(hint in raw_text for hint in RESPONSE_HINTS)
@@ -76,7 +78,7 @@ def classify(subject: str, snippet: str, received_at: datetime) -> Classificatio
         category=category,
         requires_response=requires_response,
         detected_dates=dates,
-        deadline_at=_deadline(dates) if has_deadline_word and dates else None,
+        deadline_at=_deadline(dates) if is_recruiting and has_deadline_word and dates else None,
     )
 
 

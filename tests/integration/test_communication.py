@@ -18,7 +18,12 @@ from app.integrations.notifications.channels import (
 )
 from app.main import app
 from app.models.application import Application
-from app.models.communication import EmailAccount, NotificationDelivery, OAuthState
+from app.models.communication import (
+    EmailAccount,
+    NotificationDelivery,
+    OAuthState,
+    RecruitmentMessage,
+)
 from app.models.enums import ApplicationStatus, DeliveryStatus, EmailProvider, NotificationEvent
 from app.services.communication import email_service, notification_service
 from app.wiring import get_cipher, get_email_clients
@@ -198,15 +203,21 @@ def test_sync_classifies_matches_and_updates_applications(client, db_session, us
     assert totals["new_messages"] == 4
     assert acme["status"] == "interview"
     assert zeta["status"] == "assessment"
-    newsletter = messages["As 10 linguagens mais usadas em 2026"]
-    assert newsletter["category"] == "not_recruiting"
-    assert newsletter["match_status"] == "not_applicable"
+    # A newsletter não é de recrutamento: não aparece na listagem e, no banco, guarda
+    # só a referência (id e data), sem remetente, assunto ou trecho.
+    assert "As 10 linguagens mais usadas em 2026" not in messages
+    assert len(messages) == 3
+    newsletter = db_session.scalars(
+        select(RecruitmentMessage).where(RecruitmentMessage.provider_message_id == "sim-003")
+    ).one()
+    assert newsletter.category.value == "not_recruiting"
+    assert (newsletter.from_address, newsletter.subject, newsletter.snippet) == ("", "", "")
     assessment = next(m for m in messages.values() if m["category"] == "assessment")
     assert assessment["deadline_at"] is not None
     events = {n["event_type"] for n in notifications["items"]}
     assert {"interview_invite", "assessment_received"} <= events
     # Só metadados: nenhum campo de corpo do e-mail é exposto ou guardado.
-    assert "body" not in newsletter
+    assert all("body" not in message for message in messages.values())
 
 
 def test_sync_is_idempotent(client, db_session, user, auth_headers):
