@@ -142,3 +142,19 @@ def test_outlook_follows_next_link_and_skips_known_messages():
 
     assert [m.provider_message_id for m in batch.messages] == ["o2", "o3"]
     assert batch.has_more is False
+
+
+# --- Analisador simulado: nomes curtos de tecnologia -----------------------------------
+
+
+def test_short_technology_names_are_assessed_as_desirable():
+    from app.services.analysis.requirements import KeywordRequirementAnalyzer
+    from tests.factories import make_facts, make_job
+
+    job = make_job(requirements=["FastAPI ou Django"], technologies=["Go", "FastAPI"])
+
+    result = KeywordRequirementAnalyzer().analyze(job, make_facts())
+
+    desirable = [item.requirement for item in result.requirements if not item.mandatory]
+    # "go" aparece dentro de "django", mas Go é outra tecnologia e precisa ser avaliada.
+    assert desirable == ["Go"]

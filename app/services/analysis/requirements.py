@@ -67,9 +67,12 @@ class KeywordRequirementAnalyzer:
 
     def analyze(self, job: JobOpportunity, facts: ProfileFacts) -> RequirementAnalysis:
         mandatory = list(job.requirements)
-        normalized_mandatory = normalize_text(" ".join(mandatory))
+        # Espaços nas pontas: compara termos inteiros ("go" não pode casar com "django").
+        normalized_mandatory = f" {normalize_text(' '.join(mandatory))} "
         desirable = [
-            tech for tech in job.technologies if normalize_text(tech) not in normalized_mandatory
+            tech
+            for tech in job.technologies
+            if f" {normalize_text(tech)} " not in normalized_mandatory
         ]
         assessments = [
             self._assess(text, is_mandatory, facts)

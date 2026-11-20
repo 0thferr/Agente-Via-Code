@@ -121,3 +121,51 @@ def test_non_recruiting_email_keeps_only_reference(client, db_session, user, aut
     stored = db_session.scalars(select(RecruitmentMessage)).one()
     assert (stored.from_address, stored.subject, stored.snippet) == ("", "", "")
     assert client.get("/api/v1/messages", headers=auth_headers).json()["total"] == 0
+
+
+# --- Limite diário com envios simultâneos ----------------------------------------------
+
+
+def test_in_flight_submission_counts_toward_daily_limit(client, db_session, auth_headers):
+    from sqlalchemy import update
+
+    from app.models.application import Application
+    from app.models.enums import ApplicationStatus
+    from tests.integration.test_applications import ready_application
+
+    application = ready_application(client, auth_headers)
+    # Outra candidatura sendo enviada neste momento (APPLYING, ainda sem submitted_at).
+    jobs = client.get("/api/v1/jobs", params={"limit": 100}, headers=auth_headers).json()["items"]
+    other_job = next(job for job in jobs if job["id"] != application["job_id"])
+    other = client.post(
+        "/api/v1/applications", json={"job_id": other_job["id"]}, headers=auth_headers
+    )
+    db_session.execute(
+        update(Application)
+        .where(Application.id == other.json()["id"])
+        .values(status=ApplicationStatus.APPLYING)
+    )
+    client.put(
+        "/api/v1/applications/settings", json={"max_daily_submissions": 1}, headers=auth_headers
+    )
+
+    response = client.post(f"/api/v1/applications/{application['id']}/submit", headers=auth_headers)
+
+    assert response.status_code == 422
+    assert "Limite diário" in response.json()["error"]["message"]
+
+
+def test_submission_checks_run_under_per_user_lock(db_session, user):
+    from sqlalchemy import text
+
+    from app.services.applications import submission_service
+
+    submission_service.lock_user_submissions(db_session, user.id)
+
+    advisory_locks = db_session.scalar(
+        text(
+            "SELECT count(*) FROM pg_locks "
+            "WHERE locktype = 'advisory' AND pid = pg_backend_pid() AND granted"
+        )
+    )
+    assert advisory_locks == 1

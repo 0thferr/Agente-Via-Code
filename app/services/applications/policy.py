@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.integrations.application_submitters.registry import SubmitterRegistry
@@ -36,7 +36,11 @@ def answer_from_profile(profile_field: str | None, profile: ProfessionalProfile)
 
 
 def submissions_today(session: Session, user_id: uuid.UUID) -> int:
-    """Envios por integração desde o início do dia (UTC)."""
+    """Envios por integração desde o início do dia (UTC), incluindo os em andamento.
+
+    Um envio em APPLYING ainda não tem submitted_at; sem contá-lo, dois envios
+    simultâneos poderiam passar juntos pelo limite.
+    """
     start_of_day = datetime.combine(datetime.now(UTC).date(), time.min, tzinfo=UTC)
     return (
         session.scalar(
@@ -44,8 +48,11 @@ def submissions_today(session: Session, user_id: uuid.UUID) -> int:
             .select_from(Application)
             .where(
                 Application.user_id == user_id,
-                Application.submitted_at >= start_of_day,
-                Application.confirmation_source.in_(INTEGRATION_SOURCES),
+                or_(
+                    (Application.submitted_at >= start_of_day)
+                    & Application.confirmation_source.in_(INTEGRATION_SOURCES),
+                    Application.status == ApplicationStatus.APPLYING,
+                ),
             )
         )
         or 0

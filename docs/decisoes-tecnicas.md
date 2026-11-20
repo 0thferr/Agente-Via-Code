@@ -250,3 +250,10 @@ requisições DELETE, e a senha precisa ir no corpo (nunca na URL).
 - **Vagas com análise falha voltam para a fila do worker**, até 3 tentativas.
 - **Rate limiter compatível com qualquer Redis:** `SET ... EX ... NX` + `INCR` no lugar
   de `EXPIRE ... NX` (que exige Redis 7).
+- **Limite diário sem condição de corrida:** as verificações do envio rodam sob uma trava
+  por usuário (`pg_advisory_xact_lock`), e envios em `APPLYING` contam no limite. A trava
+  sozinha não bastaria: ela é liberada no commit que grava `APPLYING`, antes de existir
+  `submitted_at`.
+- **Analisador simulado compara termos inteiros** ("Go" não é mais confundido com "django").
+- **Teste fraco substituído** por dois testes que verificam algo de fato: tarefas de e-mail
+  podem ser agendadas, e tarefa sem handler é recusada.

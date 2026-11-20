@@ -79,14 +79,27 @@ def test_create_rule_computes_next_run(client, auth_headers):
     assert rule["config"]["filters"]["keywords"] == []
 
 
-def test_task_not_yet_available_is_rejected(client, auth_headers):
+def test_email_tasks_can_be_scheduled(client, auth_headers):
+    for task_type in ("check_emails", "check_deadlines"):
+        response = client.post(
+            BASE,
+            json={"name": task_type, "task_type": task_type, "interval_minutes": 60},
+            headers=auth_headers,
+        )
+        assert response.status_code == 201, response.text
+
+
+def test_task_without_handler_is_rejected(client, auth_headers, monkeypatch):
+    monkeypatch.delitem(tasks.TASK_HANDLERS, tasks.AutomationTask.DAILY_SUMMARY)
+
     response = client.post(
         BASE,
-        json={"name": "x", "task_type": "check_emails", "interval_minutes": 60},
+        json={"name": "x", "task_type": "daily_summary", "interval_minutes": 60},
         headers=auth_headers,
     )
 
-    assert response.status_code in (201, 422)  # 201 quando a Fase 6 registrar a tarefa
+    assert response.status_code == 422
+    assert "não está disponível" in response.json()["error"]["message"]
 
 
 def test_patch_switches_schedule_kind_and_revalidates(client, auth_headers):

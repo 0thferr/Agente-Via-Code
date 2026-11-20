@@ -12,6 +12,7 @@ import logging
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import ConflictError, IntegrationError, ValidationError
@@ -54,6 +55,7 @@ def submit_application(
     *,
     actor: EventActor = EventActor.USER,
 ) -> Application:
+    lock_user_submissions(session, user_id)
     application = application_service.get_application(
         session, user_id, application_id, for_update=True
     )
@@ -124,6 +126,16 @@ def submit_application(
     )
     session.commit()
     return application
+
+
+def lock_user_submissions(session: Session, user_id: uuid.UUID) -> None:
+    """Trava (advisory lock do PostgreSQL) os envios do usuário até o fim da transação.
+
+    Assim, a verificação do limite diário e a gravação de APPLYING de dois envios
+    simultâneos acontecem uma de cada vez. A trava é liberada no commit que grava
+    APPLYING, e daí em diante o envio em andamento já conta no limite.
+    """
+    session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(str(user_id), 0))))
 
 
 def _check_authorization(
