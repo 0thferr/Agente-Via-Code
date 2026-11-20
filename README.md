@@ -4,7 +4,7 @@ API backend de um agente pessoal de candidaturas a vagas de emprego: guarda o pe
 profissional real do candidato e (nas próximas fases) descobre, analisa e acompanha vagas.
 
 > **Estado atual:** Fases 1 (fundação), 2 (descoberta de vagas), 3 (análise de
-> compatibilidade e textos de apresentação) e 4 (candidaturas) concluídas. Veja
+> compatibilidade e textos de apresentação), 4 (candidaturas) e 5 (automação) concluídas. Veja
 > [Roadmap](#roadmap), [Como a análise funciona](#como-a-análise-de-compatibilidade-funciona),
 > [Ciclo da candidatura](#ciclo-da-candidatura) e [Limitações conhecidas](#limitações-conhecidas).
 
@@ -27,6 +27,9 @@ app/
     applications/   Máquina de estados, preparação, aprovação, política e envio
   integrations/   Conectores externos (job_providers: interface, simulado, catálogo)
   ai/             Cliente de IA (interface + OpenAI) e defesas contra prompt injection
+  automation/     Agendamento, tarefas e executor do worker
+  worker.py       Processo do worker (python -m app.worker)
+  wiring.py       Montagem dos componentes (IA, provedores, enviadores) para API e worker
   cli/            Comandos administrativos (criar usuário)
 alembic/          Migrations do banco
 tests/            unit/ (sem banco) e integration/ (API + PostgreSQL)
@@ -63,6 +66,7 @@ docker compose up -d db redis
 alembic upgrade head
 python -m app.cli create-user --email voce@exemplo.com
 uvicorn app.main:app --reload
+python -m app.worker          # em outro terminal: executa as automações
 ```
 
 > Não existe cadastro público de usuários: o sistema é um agente pessoal, então contas
@@ -213,6 +217,10 @@ curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0
 | POST | `/api/v1/applications/{id}/mark-applied` | Registra candidatura feita por você na plataforma |
 | POST | `/api/v1/applications/{id}/progress` | Registra etapa: teste, entrevista, proposta, contratação |
 | GET | `/api/v1/applications/{id}/events` | Linha do tempo da candidatura |
+| GET / POST | `/api/v1/automations` | Lista / cria rotinas de automação |
+| PATCH | `/api/v1/automations/{id}` | Atualiza (agendamento, config, liga/desliga) |
+| POST | `/api/v1/automations/{id}/run` | Enfileira execução imediata (202) |
+| GET | `/api/v1/automations/executions` | Histórico de execuções com log de cada tentativa |
 
 Erros seguem sempre o formato `{"error": {"code": "...", "message": "..."}}` (erros de
 validação de entrada usam o formato padrão do FastAPI, com status 422).
@@ -312,6 +320,43 @@ DISCOVERED → ANALYZING → QUALIFIED → AWAITING_APPROVAL → READY_TO_APPLY 
   Para as demais plataformas, candidate-se nelas e registre com `/mark-applied`
   (`confirmation_source = user_declared`).
 
+## Automação (worker)
+
+O worker roda **em processo separado da API** (`python -m app.worker`, serviço `worker`
+no compose). A cada `WORKER_TICK_SECONDS` ele:
+
+1. recupera candidaturas presas em `APPLYING` há mais de `STALE_SUBMISSION_MINUTES`
+   (viram `ERROR` com resultado incerto; nova tentativa reusa a chave de idempotência);
+2. enfileira as rotinas vencidas;
+3. reserva e executa até `WORKER_MAX_JOBS_PER_TICK` execuções.
+
+| Tarefa (`task_type`) | O que faz | `config` |
+| --- | --- | --- |
+| `discover_jobs` | Busca incremental nas fontes habilitadas | `filters`, `source_ids` |
+| `analyze_jobs` | Analisa vagas ainda sem análise | `max_items` (1–50) |
+| `prepare_applications` | Cria e prepara candidaturas para vagas qualificadas | `max_items` |
+| `submit_applications` | Envia candidaturas prontas (mesmas regras de autorização do envio manual) | `max_items` |
+| `daily_summary` | Resume a atividade das últimas 24h | — |
+
+Agendamento: **horário fixo** (`time_of_day` + `days_of_week` + `timezone` IANA) **ou**
+**intervalo** (`interval_minutes`, mínimo 15). Execuções perdidas não são repetidas em
+rajada: a próxima é calculada a partir de agora.
+
+**Várias instâncias com segurança:** cada execução lógica é única no banco
+(`rule_id` + horário), a reserva usa `SELECT ... FOR UPDATE SKIP LOCKED` e tem prazo
+(lease): se um worker morrer, outro retoma depois de `WORKER_LEASE_SECONDS`.
+**Retentativas:** falhas de integração são repetidas até 3 vezes com espera crescente
+(1, 2, 4 min); erros de configuração (ex.: nenhuma fonte habilitada) falham na hora.
+
+```bash
+# Exemplo: buscar vagas de segunda a sexta às 08:00 (horário de Brasília)
+curl -s -X POST localhost:8000/api/v1/automations \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"name": "Busca diária", "task_type": "discover_jobs", "time_of_day": "08:00",
+       "days_of_week": [0,1,2,3,4], "timezone": "America/Sao_Paulo",
+       "config": {"filters": {"technologies": ["python"]}}}'
+```
+
 ## Segurança (o que já está implementado)
 
 - Senhas com **Argon2**; mensagem de erro e tempo de resposta iguais para e-mail
@@ -348,7 +393,7 @@ DISCOVERED → ANALYZING → QUALIFIED → AWAITING_APPROVAL → READY_TO_APPLY 
 | 2 | Descoberta: conectores, provedor simulado, importação manual, deduplicação | ✅ Concluída |
 | 3 | Inteligência: IA, compatibilidade, regras eliminatórias, apresentações | ✅ Concluída |
 | 4 | Candidaturas: máquina de estados, aprovação, envio autorizado | ✅ Concluída |
-| 5 | Automação: agendador em processo separado, retentativas, resumo diário | ⏳ |
+| 5 | Automação: agendador em processo separado, retentativas, resumo diário | ✅ Concluída |
 | 6 | Comunicação: OAuth de e-mail, monitoramento, notificações | ⏳ |
 | 7 | Indicadores: dashboard e métricas | ⏳ |
 
@@ -388,9 +433,14 @@ DISCOVERED → ANALYZING → QUALIFIED → AWAITING_APPROVAL → READY_TO_APPLY 
 - **Candidaturas:** nenhuma plataforma real tem envio integrado; só o enviador simulado.
   O "currículo adequado à vaga" é a lista ordenada de destaques (`resume_highlights`); não
   há geração de um novo PDF.
-- Uma candidatura que fique presa em `APPLYING` (ex.: o processo cai no meio do envio)
-  ainda não é recuperada automaticamente: isso entra com o worker da Fase 5.
-- O limite diário conta o dia em UTC; o fuso horário do usuário entra na Fase 5.
+- O limite diário de candidaturas conta o dia em UTC (o fuso das rotinas vale só para
+  o agendamento).
+- **Worker:** não há interrupção forçada de uma tarefa travada; o limite de tempo vem
+  dos timeouts das chamadas externas e do prazo da reserva. Se uma tarefa passar do
+  prazo, outro worker pode executá-la de novo — o que é seguro porque as tarefas são
+  idempotentes, mas gasta processamento.
+- O resumo diário fica registrado no histórico de execuções; o envio como notificação
+  chega na Fase 6.
 
 ## Recomendações de produção
 

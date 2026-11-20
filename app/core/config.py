@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     ai_timeout_seconds: float = Field(default=60, gt=0)
 
+    # Worker de automações (processo separado da API).
+    worker_tick_seconds: int = Field(default=30, ge=5)
+    worker_lease_seconds: int = Field(default=900, ge=60)
+    worker_max_jobs_per_tick: int = Field(default=5, ge=1, le=50)
+    stale_submission_minutes: int = Field(default=15, ge=5)
+
     cors_origins: list[str] = Field(default_factory=list)
 
     @field_validator("jwt_secret_key")

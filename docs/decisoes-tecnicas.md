@@ -127,3 +127,25 @@ preparação quanto no envio.
 **Sequência para ordenar eventos.** No PostgreSQL, `now()` é fixo durante a transação, e a
 preparação gera vários eventos de uma vez. Ordenar por `created_at` seria ambíguo, por
 isso os eventos têm uma coluna `sequence` (identity).
+
+## Fase 5 — Automação
+
+**Coordenação pelo banco, não pelo agendador.** O APScheduler só dispara o ciclo do worker
+a cada N segundos. Quem garante que uma execução lógica rode uma vez só, mesmo com várias
+instâncias, é o PostgreSQL: `UNIQUE (rule_id, scheduled_for)` ao enfileirar e
+`FOR UPDATE SKIP LOCKED` ao reservar. O APScheduler sozinho não coordena processos
+diferentes.
+
+**Lease em vez de "matar" tarefas.** Python não interrompe uma thread com segurança. Cada
+reserva tem prazo; se o worker morrer, outro retoma a execução depois do prazo. Isso só é
+seguro porque todas as tarefas são idempotentes (deduplicação de vagas, uma candidatura por
+vaga, chave de idempotência no envio).
+
+**Erro de domínio x erro transitório.** Falhas de integração (IA, plataforma) são repetidas
+com espera exponencial; erros de configuração não, porque repetir não resolve.
+
+**Sem rajada de execuções atrasadas.** A próxima execução é calculada a partir de "agora".
+Se o worker ficar parado por um dia, ele roda uma vez ao voltar, não 24 vezes.
+
+**`app/wiring.py`.** As fábricas de componentes (IA, provedores, enviadores) saíram de
+`app/api/deps.py` para que o worker use a mesma configuração sem depender da camada HTTP.

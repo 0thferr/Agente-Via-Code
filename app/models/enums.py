@@ -136,3 +136,20 @@ class ConfirmationSource(StrEnum):
     PLATFORM = "platform"  # confirmação devolvida por integração real
     SIMULATED = "simulated"  # confirmação de integração simulada (desenvolvimento)
     USER_DECLARED = "user_declared"  # o usuário se candidatou fora do sistema
+
+
+class AutomationTask(StrEnum):
+    DISCOVER_JOBS = "discover_jobs"
+    ANALYZE_JOBS = "analyze_jobs"
+    PREPARE_APPLICATIONS = "prepare_applications"
+    SUBMIT_APPLICATIONS = "submit_applications"
+    CHECK_EMAILS = "check_emails"
+    CHECK_DEADLINES = "check_deadlines"
+    DAILY_SUMMARY = "daily_summary"
+
+
+class JobRunStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"  # esgotou as tentativas

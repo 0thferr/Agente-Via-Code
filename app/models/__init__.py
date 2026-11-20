@@ -8,6 +8,7 @@ from app.models.application import (
     ApplicationSettings,
 )
 from app.models.audit import AuditLog
+from app.models.automation import AutomationRule, ExecutionLog, ScheduledJob
 from app.models.job import JobOpportunity, JobSource
 from app.models.profile import (
     Certification,
@@ -27,9 +28,11 @@ __all__ = [
     "ApplicationEvent",
     "ApplicationSettings",
     "AuditLog",
+    "AutomationRule",
     "Certification",
     "CoverLetter",
     "Education",
+    "ExecutionLog",
     "JobAnalysis",
     "JobOpportunity",
     "JobSource",
@@ -37,6 +40,7 @@ __all__ = [
     "ProfessionalProfile",
     "RefreshToken",
     "Resume",
+    "ScheduledJob",
     "Skill",
     "User",
     "WorkExperience",
