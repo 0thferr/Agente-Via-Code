@@ -11,6 +11,7 @@ from app.api.v1.routes import (
     jobs,
     messages,
     notifications,
+    privacy,
     profile,
     system,
 )
@@ -28,3 +29,4 @@ api_router.include_router(integrations.router)
 api_router.include_router(messages.router)
 api_router.include_router(notifications.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(privacy.router)

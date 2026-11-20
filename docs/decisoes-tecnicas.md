@@ -213,3 +213,24 @@ então uma preparação recusada não deixa rastros.
 
 **Gravar um envio nunca é bloqueado.** `/mark-applied` registra o que já aconteceu na
 plataforma; recusar perderia informação. O limite atua na preparação dos kits.
+
+## LGPD — exportação e exclusão
+
+**Exportação genérica com lista de exclusão.** Cada tabela do usuário é serializada pelas
+colunas do modelo, exceto uma lista fixa de campos sensíveis (hash de senha, tokens
+cifrados, segredos, chaves de armazenamento). Uma coluna nova aparece na exportação
+automaticamente; um campo sensível novo precisa entrar na lista.
+
+**Exclusão em cascata pelo banco.** Todas as chaves estrangeiras para `users` usam
+`ON DELETE CASCADE` (ou `SET NULL`), então apagar o usuário remove tudo de forma
+consistente numa única transação. Os arquivos em disco são apagados depois do commit:
+se o banco falhar, nada é perdido; se um arquivo falhar, o erro é registrado.
+
+**Reautenticação para excluir.** Um token de acesso roubado não basta: a exclusão exige a
+senha atual, a frase de confirmação e tem limite de tentativas.
+
+**Auditoria anonimizada, não apagada.** Os registros de segurança continuam úteis (ex.:
+investigar abuso), mas perdem o vínculo com a pessoa e não contêm dados de contato.
+
+**POST em vez de DELETE com corpo.** Alguns clientes e proxies descartam o corpo de
+requisições DELETE, e a senha precisa ir no corpo (nunca na URL).

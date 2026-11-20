@@ -249,6 +249,8 @@ curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0
 | GET | `/api/v1/notifications` | Notificações (com contagem de não lidas) |
 | PATCH | `/api/v1/notifications/{id}/read` | Marca como lida |
 | GET / PUT | `/api/v1/notifications/preferences` | Canais, eventos, intervalo mínimo, destinos |
+| GET | `/api/v1/privacy/export` | Exporta todos os seus dados em JSON (LGPD) |
+| POST | `/api/v1/privacy/account-deletion` | Exclui a conta e todos os dados (senha + frase de confirmação) |
 | GET | `/api/v1/dashboard/overview` | Totais do período e taxas de conversão |
 | GET | `/api/v1/dashboard/funnel` | Funil (vaga encontrada → contratação) com taxa entre etapas |
 | GET | `/api/v1/dashboard/platforms` | Métricas por plataforma de origem |
@@ -442,6 +444,22 @@ implementado** (exigiria chaves VAPID e registro de dispositivos pelo app).
 Eventos: vaga com alta compatibilidade (nota ≥ 80), candidatura aguardando aprovação,
 candidatura enviada, falha no envio, convite para entrevista, teste técnico, proposta,
 e-mail que precisa de validação, prazo próximo e resumo diário.
+
+## Privacidade (LGPD)
+
+- **Acesso e portabilidade:** `GET /privacy/export` devolve um JSON com todos os seus
+  dados (perfil, currículos, vagas, análises, textos, candidaturas e linha do tempo,
+  automações, e-mails monitorados, notificações e auditoria). Senhas, tokens, segredos
+  e chaves internas não são exportados. Limite: 5 exportações por hora.
+- **Eliminação:** `POST /privacy/account-deletion` com
+  `{"password": "...", "confirmation": "EXCLUIR MINHA CONTA"}` apaga a conta e todos os
+  dados (em cascata no banco) e os PDFs de currículo do disco. É irreversível e tem limite
+  de tentativas. Os registros de auditoria são mantidos **anonimizados** (sem vínculo com a
+  pessoa e sem dados de contato), por segurança.
+- **Minimização:** só fatos profissionais vão para a IA; dos e-mails, só metadados; tokens
+  cifrados.
+- Ao excluir a conta, os tokens OAuth são apagados do sistema, mas não são revogados no
+  Google/Microsoft: revogue o acesso também nas configurações da sua conta de e-mail.
 
 ## Segurança (o que já está implementado)
 
