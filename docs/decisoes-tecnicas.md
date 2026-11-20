@@ -172,3 +172,23 @@ validação. Um e-mail associado errado mudaria a etapa da candidatura errada.
 **Notificar ≠ entregar.** `notify` só grava no banco, na mesma transação do fato que gerou
 a notificação; o worker faz as entregas externas com retentativas. Assim, uma API externa
 lenta não atrasa requisições, e não há notificação de um fato que foi desfeito (rollback).
+
+## Fase 7 — Indicadores
+
+**Métricas calculadas na hora, a partir dos registros.** Nada de contadores guardados que
+podem divergir dos dados. Para o volume de um agente pessoal, consultas agregadas com os
+índices certos são rápidas; se crescer, dá para materializar depois.
+
+**Etapas alcançadas pela linha do tempo.** "Entrevistas" conta candidaturas que *passaram*
+por `INTERVIEW` no período (eventos), não só as que estão lá agora. Assim, uma
+candidatura que já virou proposta continua contando como entrevista.
+
+**Última análise por vaga com `row_number()`.** Uma window function, em vez de
+`DISTINCT ON`, porque a forma de escrever `DISTINCT ON` mudou entre o SQLAlchemy 2.0 e o
+2.1; a window function funciona nas duas.
+
+**Índices para os filtros do dashboard.** `(user_id, created_at)` em vagas,
+`(user_id, submitted_at)` em candidaturas e `(to_status, created_at)` nos eventos.
+
+**Intervalo máximo de 366 dias.** Evita consultas que varrem o histórico inteiro sem
+necessidade.

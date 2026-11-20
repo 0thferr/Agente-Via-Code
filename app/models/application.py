@@ -99,6 +99,7 @@ class Application(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("user_id", "job_id", name="uq_applications_user_job"),
         Index("ix_applications_user_status", "user_id", "status"),
+        Index("ix_applications_user_submitted", "user_id", "submitted_at"),
     )
 
 
@@ -122,7 +123,11 @@ class ApplicationEvent(UUIDPrimaryKeyMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (Index("ix_application_events_app_sequence", "application_id", "sequence"),)
+    __table_args__ = (
+        Index("ix_application_events_app_sequence", "application_id", "sequence"),
+        # Indicadores do dashboard: "candidaturas que chegaram à etapa X no período".
+        Index("ix_application_events_status_created", "to_status", "created_at"),
+    )
 
 
 class ApplicationApproval(UUIDPrimaryKeyMixin, Base):

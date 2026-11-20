@@ -6,6 +6,7 @@ from app.api.v1.routes import (
     auth,
     automations,
     cover_letters,
+    dashboard,
     integrations,
     jobs,
     messages,
@@ -26,3 +27,4 @@ api_router.include_router(automations.router)
 api_router.include_router(integrations.router)
 api_router.include_router(messages.router)
 api_router.include_router(notifications.router)
+api_router.include_router(dashboard.router)

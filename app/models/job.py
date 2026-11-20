@@ -95,4 +95,5 @@ class JobOpportunity(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_jobs_user_posted_at", "user_id", "posted_at"),
         Index("ix_jobs_user_company", "user_id", "company"),
+        Index("ix_jobs_user_created", "user_id", "created_at"),
     )

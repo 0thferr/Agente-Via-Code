@@ -3,11 +3,23 @@
 API backend de um agente pessoal de candidaturas a vagas de emprego: guarda o perfil
 profissional real do candidato e (nas próximas fases) descobre, analisa e acompanha vagas.
 
-> **Estado atual:** Fases 1 (fundação), 2 (descoberta de vagas), 3 (análise de
-> compatibilidade e textos de apresentação), 4 (candidaturas), 5 (automação) e 6
-> (comunicação: e-mails e notificações) concluídas. Veja
-> [Roadmap](#roadmap), [Como a análise funciona](#como-a-análise-de-compatibilidade-funciona),
-> [Ciclo da candidatura](#ciclo-da-candidatura) e [Limitações conhecidas](#limitações-conhecidas).
+> **Estado atual:** as 7 fases do plano estão implementadas e testadas (281 testes
+> automatizados + validação de ponta a ponta em Docker). As integrações com plataformas
+> reais de vagas não existem (dependem de APIs autorizadas) e os conectores Gmail/Outlook
+> e OpenAI ainda não foram validados com credenciais reais. Veja
+> [O que é real e o que é simulado](#o-que-é-real-e-o-que-é-simulado) e
+> [Limitações conhecidas](#limitações-conhecidas).
+
+## O que é real e o que é simulado
+
+| Recurso | Situação |
+| --- | --- |
+| Auth, perfil, currículos, vagas manuais, deduplicação, análise determinística, candidaturas, aprovação, idempotência, automação, notificações in-app, dashboard | **Funcional** e testado |
+| Busca automática de vagas | **Simulada** (provedor `mock`); LinkedIn, Gupy, Indeed, Catho e Vagas.com.br só por importação manual |
+| Envio automático de candidaturas | **Simulado** (apenas vagas `mock`); demais plataformas: candidate-se lá e registre com `/mark-applied` |
+| Análise e textos com IA | `simulated` (palavras-chave, sem custo) por padrão; cliente **OpenAI implementado, não validado com chave real** |
+| Monitoramento de e-mail | Caixa **simulada** funcional; clientes **Gmail/Outlook implementados, não validados** com app OAuth real |
+| Notificações externas | E-mail (SMTP), Telegram e webhook implementados (precisam de configuração); **push não implementado** |
 
 ## Stack
 
@@ -231,6 +243,13 @@ curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0
 | GET | `/api/v1/notifications` | Notificações (com contagem de não lidas) |
 | PATCH | `/api/v1/notifications/{id}/read` | Marca como lida |
 | GET / PUT | `/api/v1/notifications/preferences` | Canais, eventos, intervalo mínimo, destinos |
+| GET | `/api/v1/dashboard/overview` | Totais do período e taxas de conversão |
+| GET | `/api/v1/dashboard/funnel` | Funil (vaga encontrada → contratação) com taxa entre etapas |
+| GET | `/api/v1/dashboard/platforms` | Métricas por plataforma de origem |
+| GET | `/api/v1/dashboard/timeline` | Séries por `day`/`week`/`month`, incluindo execuções do agente |
+
+Filtros do dashboard: `date_from`, `date_to` (padrão: últimos 30 dias; máx. 366),
+`provider_key`, `company`, `title` (cargo), `status` (da candidatura) e `min_score`.
 
 Erros seguem sempre o formato `{"error": {"code": "...", "message": "..."}}` (erros de
 validação de entrada usam o formato padrão do FastAPI, com status 422).
@@ -438,7 +457,7 @@ e-mail que precisa de validação, prazo próximo e resumo diário.
 | 4 | Candidaturas: máquina de estados, aprovação, envio autorizado | ✅ Concluída |
 | 5 | Automação: agendador em processo separado, retentativas, resumo diário | ✅ Concluída |
 | 6 | Comunicação: OAuth de e-mail, monitoramento, notificações | ✅ Concluída |
-| 7 | Indicadores: dashboard e métricas | ⏳ |
+| 7 | Indicadores: dashboard e métricas | ✅ Concluída |
 
 ## Limitações conhecidas
 
@@ -490,6 +509,8 @@ e-mail que precisa de validação, prazo próximo e resumo diário.
 - A validação de webhook não detecta DNS rebinding (domínio público que resolve para IP
   interno); em produção, restrinja também a saída de rede.
 - Notificações push não estão implementadas.
+- **Dashboard:** períodos agrupados em UTC; "etapas alcançadas" vêm da linha do tempo,
+  então candidaturas criadas antes da Fase 4 (sem eventos) não entram nessas contagens.
 
 ## Recomendações de produção
 
@@ -499,4 +520,9 @@ e-mail que precisa de validação, prazo próximo e resumo diário.
   está habilitado para o rate limiting enxergar o IP real.
 - Use credenciais de banco próprias (não as do `docker-compose.yml`) e backups.
 - Restrinja `CORS_ORIGINS` aos domínios do dashboard.
-- Defina `ENABLE_SIMULATED_PROVIDERS=false` para não expor o provedor de vagas fictícias.
+- Defina `ENABLE_SIMULATED_PROVIDERS=false` para desligar vagas, envios e e-mails simulados.
+- Gere `TOKEN_ENCRYPTION_KEY` própria e guarde-a com o mesmo cuidado do banco: sem ela,
+  os tokens de e-mail cifrados não podem ser lidos (e trocá-la exige reconectar as contas).
+- Rode a API e o worker como serviços separados; o worker pode ter várias réplicas.
+- Restrinja a saída de rede do servidor (webhooks) e monitore `GET /api/v1/ready`.
+- Configure CI rodando `ruff check`, `ruff format --check` e `pytest` a cada push.

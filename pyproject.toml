@@ -1,6 +1,6 @@
 [project]
 name = "jobpilot-ai"
-version = "0.6.0"
+version = "1.0.0"
 description = "Agente pessoal de candidaturas a vagas de emprego (API backend)."
 readme = "README.md"
 requires-python = ">=3.12"
