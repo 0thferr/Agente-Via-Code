@@ -1,6 +1,7 @@
 """Importa todos os modelos para registrá-los no metadata (usado pelo Alembic)."""
 
 from app.models.audit import AuditLog
+from app.models.job import JobOpportunity, JobSource
 from app.models.profile import (
     Certification,
     Education,
@@ -16,6 +17,8 @@ __all__ = [
     "AuditLog",
     "Certification",
     "Education",
+    "JobOpportunity",
+    "JobSource",
     "Language",
     "ProfessionalProfile",
     "RefreshToken",

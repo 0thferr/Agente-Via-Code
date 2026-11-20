@@ -15,13 +15,12 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
-from app.db.types import text_enum
+from app.db.types import EMPTY_ARRAY, text_enum
 from app.models.enums import (
     EducationStatus,
     LanguageProficiency,
@@ -32,8 +31,6 @@ from app.models.enums import (
 
 if TYPE_CHECKING:
     from app.models.user import User
-
-EMPTY_ARRAY = text("'{}'")
 
 
 class ProfessionalProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):

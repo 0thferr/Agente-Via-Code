@@ -3,7 +3,8 @@
 API backend de um agente pessoal de candidaturas a vagas de emprego: guarda o perfil
 profissional real do candidato e (nas próximas fases) descobre, analisa e acompanha vagas.
 
-> **Estado atual:** Fase 1 (fundação) concluída. Veja [Roadmap](#roadmap) e
+> **Estado atual:** Fases 1 (fundação) e 2 (descoberta de vagas) concluídas. Veja
+> [Roadmap](#roadmap), [Integrações](#integrações-de-vagas) e
 > [Limitações conhecidas](#limitações-conhecidas).
 
 ## Stack
@@ -15,15 +16,16 @@ Python 3.12+ · FastAPI · Pydantic v2 · SQLAlchemy 2 · Alembic · PostgreSQL 
 ```
 app/
   api/            Rotas HTTP (/api/v1) e dependências (auth, sessão, rate limit)
-  core/           Configuração, segurança (hash/JWT), logging, erros de domínio
+  core/           Configuração, segurança (hash/JWT), logging, erros, normalização de texto
   db/             Base declarativa, sessão e tipos comuns
   models/         Modelos SQLAlchemy (tabelas)
   schemas/        Contratos Pydantic de entrada/saída
   services/       Regras de negócio (não conhecem HTTP)
+  integrations/   Conectores externos (job_providers: interface, simulado, catálogo)
   cli/            Comandos administrativos (criar usuário)
 alembic/          Migrations do banco
 tests/            unit/ (sem banco) e integration/ (API + PostgreSQL)
-docs/             Decisões técnicas
+docs/             Decisões técnicas (docs/decisoes-tecnicas.md)
 ```
 
 Fluxo de uma requisição: **rota** (valida entrada com schema) → **serviço** (regra de
@@ -109,6 +111,25 @@ curl -s -X POST localhost:8000/api/v1/profile/resumes \
 curl -s -X POST localhost:8000/api/v1/profile/resumes/<id>/confirm \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"profile": { ...perfil revisado... }}'
+
+# Habilitar o provedor simulado e pesquisar vagas
+curl -s -X POST localhost:8000/api/v1/jobs/sources \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"provider_key": "mock"}'
+curl -s -X POST localhost:8000/api/v1/jobs/search \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"filters": {"technologies": ["python"], "work_model": "remote"}}'
+# => {"results": [{"provider_key": "mock", "fetched": 3, "created": 2, "duplicates": 1, ...}], ...}
+
+# Importar manualmente uma vaga vista no LinkedIn/Gupy (idempotente)
+curl -s -X POST localhost:8000/api/v1/jobs/import \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"url": "https://...", "title": "Desenvolvedora Python", "company": "Empresa",
+       "description": "texto copiado da vaga", "work_model": "remote"}'
+
+# Listar vagas com filtros e paginação
+curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0" \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
 ## Endpoints disponíveis
@@ -126,9 +147,37 @@ curl -s -X POST localhost:8000/api/v1/profile/resumes/<id>/confirm \
 | GET | `/api/v1/profile/resumes/{id}` | Detalhe e rascunho extraído |
 | GET | `/api/v1/profile/resumes/{id}/file` | Download do PDF (só o dono) |
 | POST | `/api/v1/profile/resumes/{id}/confirm` | Confirma o rascunho revisado no perfil |
+| GET | `/api/v1/jobs/providers` | Catálogo de fontes, capacidades e tipo de integração |
+| GET / POST | `/api/v1/jobs/sources` | Lista / habilita uma fonte com pesquisa automática |
+| PATCH | `/api/v1/jobs/sources/{id}` | Liga/desliga uma fonte |
+| POST | `/api/v1/jobs/search` | Pesquisa nas fontes e salva só vagas novas |
+| POST | `/api/v1/jobs/import` | Importação manual (201 se criou, 200 se já existia) |
+| GET | `/api/v1/jobs` | Lista com filtros (`q`, `company`, `provider_key`, `work_model`, `seniority`, `posted_after`) e paginação |
+| GET | `/api/v1/jobs/{id}` | Detalhe da vaga |
 
 Erros seguem sempre o formato `{"error": {"code": "...", "message": "..."}}` (erros de
 validação de entrada usam o formato padrão do FastAPI, com status 422).
+
+## Integrações de vagas
+
+| Fonte | Integração | Como usar |
+| --- | --- | --- |
+| Provedor simulado (`mock`) | **Simulada** — vagas fictícias | `POST /jobs/sources` + `POST /jobs/search` |
+| LinkedIn | Manual (API restrita a parceiros) | `POST /jobs/import` |
+| Gupy | Manual (API oficial é para recrutadores) | `POST /jobs/import` |
+| Indeed | Manual (API de busca restrita a parceiros) | `POST /jobs/import` |
+| Catho | Manual (sem API pública para candidatos) | `POST /jobs/import` |
+| Vagas.com.br | Manual (sem API pública para candidatos) | `POST /jobs/import` |
+| Páginas de carreira | Manual (conectores por empresa podem ser adicionados) | `POST /jobs/import` |
+
+**Nenhuma integração real está ativa.** O sistema não faz scraping nem contorna CAPTCHA,
+login ou mecanismos antibot. Para adicionar uma fonte com API oficial ou feed público,
+implemente `JobProvider` (`app/integrations/job_providers/base.py`) e registre-a em
+`registry.py`. O estado de cada fonte também é exposto em `GET /api/v1/jobs/providers`.
+
+**Deduplicação:** a mesma vaga não é salva duas vezes para o mesmo usuário, seja pelo
+mesmo ID na fonte, pela mesma URL (ignorando `utm_*`, `#fragmento`, barra final...) ou
+pelo mesmo conteúdo (empresa + cargo + local) vindo de outra plataforma.
 
 ## Segurança (o que já está implementado)
 
@@ -146,13 +195,15 @@ validação de entrada usam o formato padrão do FastAPI, com status 422).
 - **Auditoria** (`audit_logs`) de login, falhas de login, reutilização de token, perfil e
   currículos — gravada na mesma transação da ação.
 - Contêiner executa como usuário sem privilégios.
+- Conteúdo de vagas é tratado como dado não confiável: HTML e caracteres de controle são
+  removidos, tamanhos são limitados e URLs só aceitam `http(s)`.
 
 ## Roadmap
 
 | Fase | Escopo | Estado |
 | --- | --- | --- |
 | 1 | Fundação: API, Docker, PostgreSQL, migrations, auth, perfil, testes | ✅ Concluída |
-| 2 | Descoberta: conectores, provedor simulado, importação manual, deduplicação | ⏳ |
+| 2 | Descoberta: conectores, provedor simulado, importação manual, deduplicação | ✅ Concluída |
 | 3 | Inteligência: IA, compatibilidade, regras eliminatórias, apresentações | ⏳ |
 | 4 | Candidaturas: máquina de estados, aprovação, envio autorizado | ⏳ |
 | 5 | Automação: agendador em processo separado, retentativas, resumo diário | ⏳ |
@@ -171,6 +222,17 @@ validação de entrada usam o formato padrão do FastAPI, com status 422).
   um armazenamento compartilhado (ex.: S3) implementando a mesma interface de
   `LocalFileStorage`.
 - Se o Redis estiver indisponível, o login é recusado (falha fechada), por segurança.
+- **Descoberta**: só o provedor simulado faz pesquisa automática; as plataformas reais
+  dependem de importação manual. A pesquisa roda de forma síncrona na requisição (o
+  agendamento em processo separado é da Fase 5).
+- A busca incremental usa a data da última sincronização da fonte; vagas publicadas com
+  data retroativa por uma fonte podem ser perdidas no modo incremental (a busca completa
+  as encontra, e a deduplicação evita repetições).
+- A deduplicação por conteúdo considera iguais duas vagas com mesma empresa, cargo e
+  local. Duas vagas realmente distintas com esses três campos idênticos seriam tratadas
+  como uma só.
+- `POST /jobs/import` não acessa a URL informada (para não fazer scraping); o usuário
+  informa os dados da vaga.
 
 ## Recomendações de produção
 
@@ -180,3 +242,4 @@ validação de entrada usam o formato padrão do FastAPI, com status 422).
   está habilitado para o rate limiting enxergar o IP real.
 - Use credenciais de banco próprias (não as do `docker-compose.yml`) e backups.
 - Restrinja `CORS_ORIGINS` aos domínios do dashboard.
+- Defina `ENABLE_SIMULATED_PROVIDERS=false` para não expor o provedor de vagas fictícias.

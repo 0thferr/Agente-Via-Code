@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     storage_dir: Path = Path("./storage")
     max_resume_size_mb: int = Field(default=5, gt=0)
 
+    # Provedor com vagas fictícias, útil em desenvolvimento e demonstrações.
+    enable_simulated_providers: bool = True
+
     cors_origins: list[str] = Field(default_factory=list)
 
     @field_validator("jwt_secret_key")

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.errors import AuthenticationError
 from app.db.session import get_db_session
+from app.integrations.job_providers.registry import ProviderRegistry, build_default_registry
 from app.models.user import User
 from app.services import auth_service
 from app.services.file_storage import LocalFileStorage
@@ -33,6 +34,11 @@ def get_redis_client() -> Redis:
 
 def get_rate_limiter() -> RateLimiter:
     return RedisRateLimiter(get_redis_client())
+
+
+@lru_cache
+def get_provider_registry() -> ProviderRegistry:
+    return build_default_registry(include_simulated=get_settings().enable_simulated_providers)
 
 
 def get_file_storage(settings: SettingsDep) -> LocalFileStorage:
@@ -58,3 +64,4 @@ def client_identifier(request: Request) -> str:
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 RateLimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 FileStorageDep = Annotated[LocalFileStorage, Depends(get_file_storage)]
+ProviderRegistryDep = Annotated[ProviderRegistry, Depends(get_provider_registry)]

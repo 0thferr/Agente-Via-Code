@@ -45,3 +45,17 @@ class ResumeImportStatus(StrEnum):
     CONFIRMED = "confirmed"
     DISCARDED = "discarded"
     FAILED = "failed"
+
+
+class Seniority(StrEnum):
+    INTERN = "intern"
+    JUNIOR = "junior"
+    MID = "mid"
+    SENIOR = "senior"
+    LEAD = "lead"
+    SPECIALIST = "specialist"
+
+
+class DiscoveryMethod(StrEnum):
+    AUTOMATIC = "automatic"
+    MANUAL = "manual"

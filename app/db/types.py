@@ -1,6 +1,6 @@
 from enum import Enum as PyEnum
 
-from sqlalchemy import Enum
+from sqlalchemy import Enum, text
 
 
 def text_enum(enum_class: type[PyEnum]) -> Enum:
@@ -14,3 +14,7 @@ def text_enum(enum_class: type[PyEnum]) -> Enum:
         length=32,
         values_callable=lambda members: [member.value for member in members],
     )
+
+
+# Valor padrão no banco para colunas ARRAY obrigatórias.
+EMPTY_ARRAY = text("'{}'")
