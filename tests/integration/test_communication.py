@@ -404,11 +404,15 @@ def test_failed_delivery_is_retried_then_marked_failed(client, db_session, user,
     )
     notify(db_session, user.id)
 
-    for _ in range(3):
-        notification_service.deliver_pending(db_session, channels, CIPHER, datetime.now(UTC))
+    moment = datetime.now(UTC)
+    for _ in range(notification_service.MAX_DELIVERY_ATTEMPTS):
+        notification_service.deliver_pending(db_session, channels, CIPHER, moment)
+        moment += timedelta(hours=1)  # passa da espera entre tentativas
 
     delivery = db_session.scalars(select(NotificationDelivery)).one()
-    assert delivery.status is DeliveryStatus.FAILED and delivery.attempts == 3
+    assert delivery.status is DeliveryStatus.FAILED
+    assert delivery.attempts == notification_service.MAX_DELIVERY_ATTEMPTS
+    assert delivery.next_attempt_at is None
 
 
 def test_high_match_and_approval_notifications_from_pipeline(client, auth_headers):

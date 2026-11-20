@@ -158,3 +158,27 @@ def test_short_technology_names_are_assessed_as_desirable():
     desirable = [item.requirement for item in result.requirements if not item.mandatory]
     # "go" aparece dentro de "django", mas Go é outra tecnologia e precisa ser avaliada.
     assert desirable == ["Go"]
+
+
+# --- Segunda passada -------------------------------------------------------------------
+
+
+def test_title_words_match_whole_words_only():
+    from app.services.communication.matcher import Candidate, _score
+
+    candidate = Candidate("a", "Empresa Zeta", "Engenheiro Java", "https://zeta.example/1")
+
+    # Antes, "java" casava dentro de "javascript" (1 de 2 palavras = bônus do cargo).
+    assert _score(candidate, "vaga engenharia javascript", "") == 0.0
+    assert _score(candidate, "vaga engenheiro java", "") > 0
+
+
+def test_summary_excerpt_never_cuts_a_word():
+    from app.services.cover_letters.writers import MAX_SUMMARY_EXCERPT, _summary_excerpt
+
+    summary = "palavra " * (MAX_SUMMARY_EXCERPT // 4)  # longo e sem ponto final
+
+    excerpt = _summary_excerpt(summary)
+
+    assert len(excerpt) <= MAX_SUMMARY_EXCERPT + 1
+    assert excerpt.rstrip("….").split()[-1] == "palavra"

@@ -440,7 +440,7 @@ curl -s -X POST localhost:8000/api/v1/automations \
 **Notificações.** Sempre salvas no app (in-app); canais externos opcionais:
 e-mail (SMTP), Telegram e webhook com assinatura **HMAC-SHA256** no cabeçalho
 `X-JobPilot-Signature` (o segredo é mostrado uma única vez). As entregas externas são
-feitas pelo worker, com até 3 tentativas. Há **deduplicação** (o mesmo fato não notifica
+feitas pelo worker, com até 5 tentativas e espera crescente entre elas (1, 2, 4, 8 min). Há **deduplicação** (o mesmo fato não notifica
 duas vezes), **eventos desativáveis** e **intervalo mínimo por evento**. **Push não está
 implementado** (exigiria chaves VAPID e registro de dispositivos pelo app).
 

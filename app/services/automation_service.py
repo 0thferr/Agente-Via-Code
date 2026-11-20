@@ -91,6 +91,8 @@ def update_rule(
 def run_now(session: Session, user_id: uuid.UUID, rule_id: uuid.UUID) -> ScheduledJob:
     """Enfileira uma execução imediata. Repetir no mesmo minuto não cria outra."""
     rule = get_rule(session, user_id, rule_id)
+    if not rule.is_enabled:
+        raise ValidationError("A regra está desativada. Ative-a antes de executar.")
     now = datetime.now(UTC)
     job = enqueue_job(session, rule, now.replace(second=0, microsecond=0), now)
     record_audit_event(

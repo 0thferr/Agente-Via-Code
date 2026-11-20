@@ -37,7 +37,20 @@ def create_app() -> FastAPI:
     ) -> Response:
         request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
         started = time.perf_counter()
-        response = await call_next(request)
+        try:
+            response = await call_next(request)
+        except Exception:
+            # Erro não tratado: registra com o request_id para rastrear, e repassa ao
+            # FastAPI, que responde 500 sem expor detalhes ao cliente.
+            logger.exception(
+                "request_failed",
+                extra={
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": request.url.path,
+                },
+            )
+            raise
         response.headers["X-Request-ID"] = request_id
         # Registramos só método, rota e status: nunca corpo, query string ou cabeçalhos,
         # que podem conter dados pessoais ou tokens.

@@ -257,3 +257,16 @@ requisições DELETE, e a senha precisa ir no corpo (nunca na URL).
 - **Analisador simulado compara termos inteiros** ("Go" não é mais confundido com "django").
 - **Teste fraco substituído** por dois testes que verificam algo de fato: tarefas de e-mail
   podem ser agendadas, e tarefa sem handler é recusada.
+
+## Segunda passada de revisão
+
+- **Regra desativada não executa.** Execuções já enfileiradas (ou em retentativa) de uma
+  regra desativada são encerradas sem rodar, e não é possível disparar manualmente uma
+  regra desativada. Desligar o envio automático precisa valer na hora.
+- **Tentativa interrompida fica no histórico.** Ao retomar um job cuja reserva venceu, o
+  worker registra a tentativa perdida como falha.
+- **Notificações com espera exponencial.** Até 5 tentativas, com 1, 2, 4 e 8 minutos entre
+  elas (coluna `next_attempt_at`), em vez de 3 tentativas em ~90 segundos.
+- **Erros inesperados registrados com `request_id`** no log estruturado.
+- **Associação de e-mail por palavra inteira** também nas palavras do cargo.
+- **Resumo do perfil nunca cortado no meio de uma palavra** no texto simulado.

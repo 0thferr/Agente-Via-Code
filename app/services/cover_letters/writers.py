@@ -106,10 +106,12 @@ def _summary_excerpt(summary: str | None) -> str | None:
     if not summary:
         return None
     excerpt = summary.strip()[:MAX_SUMMARY_EXCERPT]
-    if excerpt.endswith("."):
+    if len(summary.strip()) <= MAX_SUMMARY_EXCERPT or excerpt.endswith("."):
         return excerpt
-    # Corta na última frase completa para não terminar no meio de uma palavra.
-    return excerpt.rsplit(".", 1)[0] + "."
+    # Texto cortado: termina na última frase completa ou, sem ponto, na última palavra.
+    if "." in excerpt:
+        return excerpt.rsplit(".", 1)[0] + "."
+    return excerpt.rsplit(" ", 1)[0].rstrip(",;:") + "…"
 
 
 def _fit(paragraphs: list[str], optional: str | None, closing: str, limit: int) -> str:

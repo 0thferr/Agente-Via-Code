@@ -179,6 +179,8 @@ class NotificationDelivery(UUIDPrimaryKeyMixin, Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_error: Mapped[str | None] = mapped_column(String(500))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Próxima tentativa permitida (espera exponencial após falhas); nulo = imediata.
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (
         UniqueConstraint("notification_id", "channel", name="uq_deliveries_notification_channel"),

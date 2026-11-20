@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -35,7 +35,9 @@ from app.services.audit_service import record_audit_event
 
 logger = logging.getLogger(__name__)
 
-MAX_DELIVERY_ATTEMPTS = 3
+MAX_DELIVERY_ATTEMPTS = 5
+# Espera entre tentativas: 1, 2, 4 e 8 minutos (cobre instabilidades de ~15 min).
+RETRY_BASE_DELAY = timedelta(minutes=1)
 DELIVERY_BATCH_SIZE = 50
 WEBHOOK_SECRET_BYTES = 32
 
@@ -129,6 +131,10 @@ def deliver_pending(
         .where(
             NotificationDelivery.status == DeliveryStatus.PENDING,
             NotificationDelivery.attempts < MAX_DELIVERY_ATTEMPTS,
+            or_(
+                NotificationDelivery.next_attempt_at.is_(None),
+                NotificationDelivery.next_attempt_at <= now,
+            ),
         )
         .order_by(NotificationDelivery.id)
         .limit(DELIVERY_BATCH_SIZE)
@@ -156,6 +162,9 @@ def deliver_pending(
             )
             final = delivery.attempts >= MAX_DELIVERY_ATTEMPTS
             _mark(delivery, DeliveryStatus.FAILED if final else DeliveryStatus.PENDING, str(exc))
+            delivery.next_attempt_at = (
+                None if final else now + RETRY_BASE_DELAY * (2 ** (delivery.attempts - 1))
+            )
             continue
         delivery.status = DeliveryStatus.SENT
         delivery.sent_at = now

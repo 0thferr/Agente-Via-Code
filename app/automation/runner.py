@@ -29,6 +29,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_ATTEMPTS = 3
 RETRY_BASE_DELAY = timedelta(minutes=1)
 MAX_ERROR_LENGTH = 500
+INTERRUPTED_ATTEMPT_ERROR = (
+    "Execução interrompida: o worker parou antes de concluir (prazo da reserva expirou)."
+)
 
 
 @dataclass
@@ -108,6 +111,10 @@ def claim_next_job(
     ).first()
     if job is None:
         return None
+    if job.status is JobRunStatus.RUNNING:
+        # A reserva venceu: a tentativa anterior foi interrompida (worker caiu) e
+        # não deixou registro. Registramos agora para o histórico ficar completo.
+        _log(session, job, JobRunStatus.FAILED, now, error=INTERRUPTED_ATTEMPT_ERROR)
     if job.attempts >= job.max_attempts:
         _finish(session, job, JobRunStatus.FAILED, now, "Tentativas esgotadas (reserva vencida).")
         return None
@@ -123,6 +130,13 @@ def execute_job(session: Session, context: TaskContext, job: ScheduledJob, now: 
     started_at = now
     handler = TASK_HANDLERS.get(job.task_type)
     rule = session.get(AutomationRule, job.rule_id)
+    if rule is None or not rule.is_enabled:
+        # O usuário desativou a regra depois do enfileiramento (ex.: parou o envio
+        # automático): execuções pendentes e retentativas não podem mais rodar.
+        message = "Regra desativada antes da execução."
+        _log(session, job, JobRunStatus.FAILED, started_at, error=message)
+        _finish(session, job, JobRunStatus.FAILED, now, message)
+        return
     try:
         if handler is None:
             raise DomainError(f"Tarefa {job.task_type} não está disponível.")

@@ -67,7 +67,8 @@ def _score(candidate: Candidate, text: str, sender_domain: str) -> float:
     title_words = [
         w for w in normalize_text(candidate.title).split() if len(w) >= MIN_TITLE_WORD_LENGTH
     ]
-    if title_words and sum(word in text for word in title_words) >= len(title_words) / 2:
+    text_words = set(text.split())
+    if title_words and sum(word in text_words for word in title_words) >= len(title_words) / 2:
         score += TITLE_WORDS_SCORE
     return score
 
