@@ -27,6 +27,7 @@ class MockJobProvider(JobProvider):
                 ProviderCapability.ORIGINAL_URL,
                 ProviderCapability.REQUIREMENTS,
                 ProviderCapability.WORK_MODEL,
+                ProviderCapability.AUTHORIZED_APPLY,
             }
         ),
         notes="Vagas fictícias para desenvolvimento e testes. Não representa vagas reais.",

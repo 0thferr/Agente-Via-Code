@@ -3,10 +3,10 @@
 API backend de um agente pessoal de candidaturas a vagas de emprego: guarda o perfil
 profissional real do candidato e (nas próximas fases) descobre, analisa e acompanha vagas.
 
-> **Estado atual:** Fases 1 (fundação), 2 (descoberta de vagas) e 3 (análise de
-> compatibilidade e textos de apresentação) concluídas. Veja [Roadmap](#roadmap),
-> [Como a análise funciona](#como-a-análise-de-compatibilidade-funciona) e
-> [Limitações conhecidas](#limitações-conhecidas).
+> **Estado atual:** Fases 1 (fundação), 2 (descoberta de vagas), 3 (análise de
+> compatibilidade e textos de apresentação) e 4 (candidaturas) concluídas. Veja
+> [Roadmap](#roadmap), [Como a análise funciona](#como-a-análise-de-compatibilidade-funciona),
+> [Ciclo da candidatura](#ciclo-da-candidatura) e [Limitações conhecidas](#limitações-conhecidas).
 
 ## Stack
 
@@ -24,6 +24,7 @@ app/
   services/       Regras de negócio (não conhecem HTTP)
     analysis/     Critérios, análise de requisitos, nota e orquestração da análise
     cover_letters/  Geração, validação de afirmações e versões das apresentações
+    applications/   Máquina de estados, preparação, aprovação, política e envio
   integrations/   Conectores externos (job_providers: interface, simulado, catálogo)
   ai/             Cliente de IA (interface + OpenAI) e defesas contra prompt injection
   cli/            Comandos administrativos (criar usuário)
@@ -151,6 +152,23 @@ curl -s -X POST localhost:8000/api/v1/cover-letters/<letter_id>/revisions \
   -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"content": "texto editado por você"}'
 
+# Candidatura: criar, preparar, responder pendências, aprovar e enviar
+curl -s -X POST localhost:8000/api/v1/applications \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"job_id": "<job_id>"}'
+curl -s -X POST localhost:8000/api/v1/applications/<id>/prepare \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
+curl -s -X POST localhost:8000/api/v1/applications/<id>/answers \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"answers": {"availability": "Imediata"}}'
+curl -s -X POST localhost:8000/api/v1/applications/<id>/approve \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{}'
+curl -s -X POST localhost:8000/api/v1/applications/<id>/submit -H "Authorization: Bearer $TOKEN"
+
+# Ou, para plataformas sem integração: candidate-se lá e registre aqui
+curl -s -X POST localhost:8000/api/v1/applications/<id>/mark-applied \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"confirmation": "Protocolo 12345"}'
+
 # Listar vagas com filtros e paginação
 curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0" \
   -H "Authorization: Bearer $TOKEN"
@@ -184,6 +202,17 @@ curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0
 | GET | `/api/v1/cover-letters/{id}` | Detalhe de uma versão |
 | POST | `/api/v1/cover-letters/{id}/revisions` | Salva sua edição como nova versão |
 | GET / PUT | `/api/v1/ai/preferences` | Nota mínima, pesos, tom de voz e exemplos de escrita |
+| GET / PUT | `/api/v1/applications/settings` | Modo (`manual`/`supervised`/`automatic`), plataformas de envio automático, limite diário |
+| POST / GET | `/api/v1/applications` | Cria a candidatura de uma vaga (idempotente) / lista com filtro de status |
+| GET | `/api/v1/applications/{id}` | Detalhe da candidatura |
+| POST | `/api/v1/applications/{id}/prepare` | Analisa e monta texto, currículo e pendências |
+| POST | `/api/v1/applications/{id}/answers` | Responde perguntas obrigatórias que o perfil não cobre |
+| POST | `/api/v1/applications/{id}/approve` | Aprova a versão exata do texto e do currículo |
+| POST | `/api/v1/applications/{id}/reject` | Recusa (encerra sem envio) |
+| POST | `/api/v1/applications/{id}/submit` | Envia pela integração autorizada (idempotente) |
+| POST | `/api/v1/applications/{id}/mark-applied` | Registra candidatura feita por você na plataforma |
+| POST | `/api/v1/applications/{id}/progress` | Registra etapa: teste, entrevista, proposta, contratação |
+| GET | `/api/v1/applications/{id}/events` | Linha do tempo da candidatura |
 
 Erros seguem sempre o formato `{"error": {"code": "...", "message": "..."}}` (erros de
 validação de entrada usam o formato padrão do FastAPI, com status 422).
@@ -253,6 +282,36 @@ formação, idiomas, certificações, resumo, senioridade e cargos desejados). N
 telefone e links **não** são enviados. Ainda assim, usar `openai` implica transferir
 dados profissionais a um terceiro (fora do Brasil): avalie isso à luz da LGPD.
 
+## Ciclo da candidatura
+
+```
+DISCOVERED → ANALYZING → QUALIFIED → AWAITING_APPROVAL → READY_TO_APPLY → APPLYING → APPLIED
+                 ↓                                                            ↓          ↓
+             REJECTED                                                       ERROR    ASSESSMENT / INTERVIEW
+                                                                                       → OFFER → HIRED
+(qualquer etapa antes do envio pode ir para CLOSED; HIRED e CLOSED são finais)
+```
+
+- **Uma candidatura por vaga** (constraint única no banco); criar de novo devolve a existente.
+- **Preparar** reaproveita a análise da Fase 3 se perfil e preferências não mudaram,
+  gera (ou reutiliza) o texto de apresentação, escolhe o currículo mais recente e ordena os
+  destaques do perfil para a vaga. Perguntas obrigatórias do formulário que o perfil não
+  responde viram **pendências para você responder** — nunca são inventadas.
+- **Modos:** `supervised` (padrão) exige aprovação; `manual` nunca envia pelo sistema;
+  `automatic` só dispensa a aprovação se **todas** as regras valerem: plataforma com
+  integração autorizada **e** na sua lista `auto_submit_providers`, texto sem alertas, sem
+  pendências, currículo disponível e limite diário respeitado. Caso contrário, a
+  candidatura aguarda aprovação e a linha do tempo registra o motivo.
+- **Aprovação** fica vinculada à versão exata do texto e do currículo. Texto com alertas
+  exige `acknowledge_warnings: true`.
+- **Envio idempotente:** a linha é travada durante a verificação, o status `APPLYING` e
+  a chave de idempotência são gravados **antes** de chamar a plataforma, toda nova tentativa
+  usa a mesma chave e `APPLIED` só acontece com confirmação da plataforma. Resultado incerto
+  (ex.: timeout) vira `ERROR`, nunca "enviada".
+- **Integrações de envio:** só existe o enviador **simulado** (vagas do provedor `mock`).
+  Para as demais plataformas, candidate-se nelas e registre com `/mark-applied`
+  (`confirmation_source = user_declared`).
+
 ## Segurança (o que já está implementado)
 
 - Senhas com **Argon2**; mensagem de erro e tempo de resposta iguais para e-mail
@@ -278,6 +337,8 @@ dados profissionais a um terceiro (fora do Brasil): avalie isso à luz da LGPD.
   não constam no perfil geram alertas (`validation_warnings`); o limite de caracteres é
   respeitado. Nenhum texto é enviado automaticamente.
 - Prompts e respostas da IA não são registrados em log (contêm dados pessoais).
+- Envio de candidatura: permissões verificadas antes de qualquer chamada externa; respostas
+  de formulário não aparecem na linha do tempo nem nas listagens (só quais foram dadas).
 
 ## Roadmap
 
@@ -286,7 +347,7 @@ dados profissionais a um terceiro (fora do Brasil): avalie isso à luz da LGPD.
 | 1 | Fundação: API, Docker, PostgreSQL, migrations, auth, perfil, testes | ✅ Concluída |
 | 2 | Descoberta: conectores, provedor simulado, importação manual, deduplicação | ✅ Concluída |
 | 3 | Inteligência: IA, compatibilidade, regras eliminatórias, apresentações | ✅ Concluída |
-| 4 | Candidaturas: máquina de estados, aprovação, envio autorizado | ⏳ |
+| 4 | Candidaturas: máquina de estados, aprovação, envio autorizado | ✅ Concluída |
 | 5 | Automação: agendador em processo separado, retentativas, resumo diário | ⏳ |
 | 6 | Comunicação: OAuth de e-mail, monitoramento, notificações | ⏳ |
 | 7 | Indicadores: dashboard e métricas | ⏳ |
@@ -324,6 +385,12 @@ dados profissionais a um terceiro (fora do Brasil): avalie isso à luz da LGPD.
   listados na vaga; afirmações genéricas sem esses termos (ex.: "liderei equipes") só
   são verificadas quando o gerador declara a afirmação em `claims`.
 - A importação de currículo ainda não usa IA para estruturar experiências.
+- **Candidaturas:** nenhuma plataforma real tem envio integrado; só o enviador simulado.
+  O "currículo adequado à vaga" é a lista ordenada de destaques (`resume_highlights`); não
+  há geração de um novo PDF.
+- Uma candidatura que fique presa em `APPLYING` (ex.: o processo cai no meio do envio)
+  ainda não é recuperada automaticamente: isso entra com o worker da Fase 5.
+- O limite diário conta o dia em UTC; o fuso horário do usuário entra na Fase 5.
 
 ## Recomendações de produção
 

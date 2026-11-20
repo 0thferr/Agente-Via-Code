@@ -17,6 +17,8 @@ from app.ai.openai_client import OpenAIStructuredLLM
 from app.core.config import AIProviderName, Settings, get_settings
 from app.core.errors import AuthenticationError
 from app.db.session import get_db_session
+from app.integrations.application_submitters.mock import MockApplicationSubmitter
+from app.integrations.application_submitters.registry import SubmitterRegistry
 from app.integrations.job_providers.registry import ProviderRegistry, build_default_registry
 from app.models.user import User
 from app.services import auth_service
@@ -77,6 +79,14 @@ def get_cover_letter_writer() -> CoverLetterWriter:
     return LLMCoverLetterWriter(llm) if llm else TemplateCoverLetterWriter()
 
 
+@lru_cache
+def get_submitter_registry() -> SubmitterRegistry:
+    """Enviadores disponíveis. Hoje só o simulado: nenhuma plataforma real tem
+    integração de candidatura autorizada configurada."""
+    simulated = [MockApplicationSubmitter()] if get_settings().enable_simulated_providers else []
+    return SubmitterRegistry(simulated)
+
+
 def get_file_storage(settings: SettingsDep) -> LocalFileStorage:
     return LocalFileStorage(settings.storage_dir)
 
@@ -102,4 +112,5 @@ RateLimiterDep = Annotated[RateLimiter, Depends(get_rate_limiter)]
 FileStorageDep = Annotated[LocalFileStorage, Depends(get_file_storage)]
 RequirementAnalyzerDep = Annotated[RequirementAnalyzer, Depends(get_requirement_analyzer)]
 CoverLetterWriterDep = Annotated[CoverLetterWriter, Depends(get_cover_letter_writer)]
+SubmitterRegistryDep = Annotated[SubmitterRegistry, Depends(get_submitter_registry)]
 ProviderRegistryDep = Annotated[ProviderRegistry, Depends(get_provider_registry)]

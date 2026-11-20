@@ -98,3 +98,32 @@ ficam de fora. Prompts e respostas não são registrados em log.
 **Análises e textos versionados.** Cada análise é um registro novo (com pesos, nota
 mínima e versão do perfil usados), e cada texto gerado ou editado é uma nova versão. Isso
 mantém o histórico dos motivos de aprovação e descarte.
+
+## Fase 4 — Candidaturas
+
+**Máquina de estados em tabela explícita.** Todas as mudanças de status passam por
+`transition`, que valida contra `ALLOWED_TRANSITIONS` e grava o evento na linha do tempo.
+É impossível, por exemplo, ir de `AWAITING_APPROVAL` direto para `APPLYING`.
+
+**Uma candidatura por vaga, garantida pelo banco.** `UNIQUE (user_id, job_id)` e criação
+com `ON CONFLICT DO NOTHING`, no mesmo padrão da deduplicação de vagas.
+
+**Concorrência em duas camadas.** `SELECT ... FOR UPDATE` serializa ações sobre a mesma
+candidatura (ex.: dois cliques em "enviar"), e uma coluna de versão (`row_version`) faz
+uma atualização concorrente falhar em vez de sobrescrever a outra em silêncio.
+
+**Idempotência do envio.** A chave é gerada uma vez e reutilizada em todas as tentativas;
+`APPLYING` é gravado antes da chamada externa. Assim, falha ou reinício no meio do envio
+fica visível, e uma nova tentativa não cria candidatura duplicada na plataforma.
+"Resultado incerto" nunca é tratado como sucesso.
+
+**Aprovação vinculada à versão.** A aprovação guarda o texto e o currículo revisados; o
+envio só vale para essa combinação. Editar o texto depois exige nova aprovação.
+
+**Modo automático por lista explícita.** Além do modo, cada plataforma precisa estar em
+`auto_submit_providers`. As regras ficam em um só lugar (`policy.py`), usado tanto na
+preparação quanto no envio.
+
+**Sequência para ordenar eventos.** No PostgreSQL, `now()` é fixo durante a transação, e a
+preparação gera vários eventos de uma vez. Ordenar por `created_at` seria ambíguo, por
+isso os eventos têm uma coluna `sequence` (identity).

@@ -96,3 +96,43 @@ class CoverLetterTone(StrEnum):
 class CoverLetterSource(StrEnum):
     GENERATED = "generated"
     USER_EDIT = "user_edit"
+
+
+class ApplicationStatus(StrEnum):
+    DISCOVERED = "discovered"
+    ANALYZING = "analyzing"
+    REJECTED = "rejected"
+    QUALIFIED = "qualified"
+    AWAITING_APPROVAL = "awaiting_approval"
+    READY_TO_APPLY = "ready_to_apply"
+    APPLYING = "applying"
+    APPLIED = "applied"
+    ASSESSMENT = "assessment"
+    INTERVIEW = "interview"
+    OFFER = "offer"
+    HIRED = "hired"
+    CLOSED = "closed"
+    ERROR = "error"
+
+
+class ApplicationMode(StrEnum):
+    MANUAL = "manual"  # o usuário analisa e envia todas as candidaturas
+    SUPERVISED = "supervised"  # o agente prepara; o envio exige aprovação
+    AUTOMATIC = "automatic"  # envio sem aprovação, só sob regras explícitas
+
+
+class EventActor(StrEnum):
+    USER = "user"
+    AGENT = "agent"
+    SYSTEM = "system"
+
+
+class ApprovalDecision(StrEnum):
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ConfirmationSource(StrEnum):
+    PLATFORM = "platform"  # confirmação devolvida por integração real
+    SIMULATED = "simulated"  # confirmação de integração simulada (desenvolvimento)
+    USER_DECLARED = "user_declared"  # o usuário se candidatou fora do sistema
