@@ -21,6 +21,7 @@ from app.models.enums import (
     EducationStatus,
     LanguageProficiency,
     ResumeImportStatus,
+    Seniority,
     SkillCategory,
     SkillLevel,
     WorkModel,
@@ -133,6 +134,7 @@ class ProfileIn(BaseModel):
     state: ShortText | None = None
     country: ShortText | None = None
     current_title: ShortText | None = None
+    seniority: Seniority | None = None
     desired_titles: ShortTextList = Field(default_factory=list)
     summary: LongText | None = None
     portfolio_url: UrlText | None = None

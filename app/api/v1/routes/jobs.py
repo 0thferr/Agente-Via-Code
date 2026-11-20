@@ -3,7 +3,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, Response, status
 
-from app.api.deps import CurrentUserDep, ProviderRegistryDep, SessionDep
+from app.api.deps import (
+    CoverLetterWriterDep,
+    CurrentUserDep,
+    ProviderRegistryDep,
+    RequirementAnalyzerDep,
+    SessionDep,
+)
+from app.schemas.analysis import CoverLetterGenerateRequest, CoverLetterOut, JobAnalysisOut
 from app.schemas.job import (
     JobDetailOut,
     JobImportRequest,
@@ -19,6 +26,8 @@ from app.schemas.job import (
     ProviderOut,
 )
 from app.services import job_service
+from app.services.analysis import analysis_service
+from app.services.cover_letters import cover_letter_service
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -116,3 +125,49 @@ def list_jobs(
 @router.get("/{job_id}", response_model=JobDetailOut)
 def get_job(job_id: uuid.UUID, session: SessionDep, current_user: CurrentUserDep) -> JobDetailOut:
     return JobDetailOut.model_validate(job_service.get_job(session, current_user.id, job_id))
+
+
+@router.post("/{job_id}/analyze", response_model=JobAnalysisOut)
+def analyze_job(
+    job_id: uuid.UUID,
+    session: SessionDep,
+    analyzer: RequirementAnalyzerDep,
+    current_user: CurrentUserDep,
+) -> JobAnalysisOut:
+    """Analisa a compatibilidade da vaga com o perfil validado. Cada chamada gera um novo
+    registro no histórico (o perfil ou as preferências podem ter mudado)."""
+    analysis = analysis_service.analyze_job(session, analyzer, current_user.id, job_id)
+    return JobAnalysisOut.from_record(analysis)
+
+
+@router.get("/{job_id}/analyses", response_model=list[JobAnalysisOut])
+def list_analyses(
+    job_id: uuid.UUID, session: SessionDep, current_user: CurrentUserDep
+) -> list[JobAnalysisOut]:
+    analyses = analysis_service.list_analyses(session, current_user.id, job_id)
+    return [JobAnalysisOut.from_record(analysis) for analysis in analyses]
+
+
+@router.post(
+    "/{job_id}/cover-letters", response_model=CoverLetterOut, status_code=status.HTTP_201_CREATED
+)
+def generate_cover_letter(
+    job_id: uuid.UUID,
+    payload: CoverLetterGenerateRequest,
+    session: SessionDep,
+    writer: CoverLetterWriterDep,
+    current_user: CurrentUserDep,
+) -> CoverLetterOut:
+    """Gera uma nova versão do texto de apresentação, sempre para revisão do usuário."""
+    letter = cover_letter_service.generate_cover_letter(
+        session, writer, current_user.id, job_id, payload
+    )
+    return CoverLetterOut.model_validate(letter)
+
+
+@router.get("/{job_id}/cover-letters", response_model=list[CoverLetterOut])
+def list_cover_letters(
+    job_id: uuid.UUID, session: SessionDep, current_user: CurrentUserDep
+) -> list[CoverLetterOut]:
+    letters = cover_letter_service.list_cover_letters(session, current_user.id, job_id)
+    return [CoverLetterOut.model_validate(letter) for letter in letters]

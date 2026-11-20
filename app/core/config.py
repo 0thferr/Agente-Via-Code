@@ -2,7 +2,7 @@ from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 MIN_SECRET_KEY_LENGTH = 32
@@ -12,6 +12,11 @@ class Environment(StrEnum):
     DEVELOPMENT = "development"
     TEST = "test"
     PRODUCTION = "production"
+
+
+class AIProviderName(StrEnum):
+    SIMULATED = "simulated"
+    OPENAI = "openai"
 
 
 class Settings(BaseSettings):
@@ -40,6 +45,14 @@ class Settings(BaseSettings):
     # Provedor com vagas fictícias, útil em desenvolvimento e demonstrações.
     enable_simulated_providers: bool = True
 
+    # "simulated" funciona sem chave e sem custo (regras por palavras-chave);
+    # "openai" usa a API da OpenAI e exige OPENAI_API_KEY.
+    ai_provider: AIProviderName = AIProviderName.SIMULATED
+    openai_api_key: SecretStr | None = None
+    openai_model: str = "gpt-4o-mini"
+    openai_base_url: str = "https://api.openai.com/v1"
+    ai_timeout_seconds: float = Field(default=60, gt=0)
+
     cors_origins: list[str] = Field(default_factory=list)
 
     @field_validator("jwt_secret_key")
@@ -48,6 +61,13 @@ class Settings(BaseSettings):
         if value.startswith("change-me"):
             raise ValueError("JWT_SECRET_KEY ainda usa o valor de exemplo; gere um segredo real.")
         return value
+
+    @model_validator(mode="after")
+    def require_openai_key(self) -> "Settings":
+        has_key = self.openai_api_key is not None and self.openai_api_key.get_secret_value()
+        if self.ai_provider is AIProviderName.OPENAI and not has_key:
+            raise ValueError("AI_PROVIDER=openai exige a variável OPENAI_API_KEY.")
+        return self
 
     @property
     def max_resume_size_bytes(self) -> int:

@@ -76,3 +76,8 @@ def test_json_formatter_redacts_extra_fields():
 def test_storage_rejects_unsafe_keys(tmp_path, key):
     with pytest.raises(ValueError):
         LocalFileStorage(tmp_path).path_for(key)
+
+
+def test_openai_provider_requires_api_key():
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        Settings(jwt_secret_key="x" * 40, ai_provider="openai", openai_api_key="")

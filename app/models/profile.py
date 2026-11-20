@@ -25,6 +25,7 @@ from app.models.enums import (
     EducationStatus,
     LanguageProficiency,
     ResumeImportStatus,
+    Seniority,
     SkillCategory,
     SkillLevel,
 )
@@ -48,6 +49,8 @@ class ProfessionalProfile(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     state: Mapped[str | None] = mapped_column(String(120))
     country: Mapped[str | None] = mapped_column(String(120))
     current_title: Mapped[str | None] = mapped_column(String(200))
+    # Senioridade declarada pelo próprio candidato (não é deduzida automaticamente).
+    seniority: Mapped[Seniority | None] = mapped_column(text_enum(Seniority))
     desired_titles: Mapped[list[str]] = mapped_column(
         ARRAY(String(200)), default=list, server_default=EMPTY_ARRAY
     )

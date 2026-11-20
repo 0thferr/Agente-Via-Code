@@ -59,3 +59,40 @@ class Seniority(StrEnum):
 class DiscoveryMethod(StrEnum):
     AUTOMATIC = "automatic"
     MANUAL = "manual"
+
+
+class FitStatus(StrEnum):
+    MATCH = "match"
+    PARTIAL = "partial"
+    MISMATCH = "mismatch"
+    UNKNOWN = "unknown"
+
+
+class AnalysisStatus(StrEnum):
+    COMPLETED = "completed"
+    PENDING_INFORMATION = "pending_information"  # "Análise pendente": descrição insuficiente
+    FAILED = "failed"
+
+
+class Recommendation(StrEnum):
+    QUALIFIED = "qualified"
+    REJECTED = "rejected"
+    PENDING = "pending"
+
+
+class RequirementStatus(StrEnum):
+    MET = "met"
+    PARTIALLY_MET = "partially_met"
+    NOT_MET = "not_met"
+    UNCLEAR = "unclear"
+
+
+class CoverLetterTone(StrEnum):
+    FORMAL = "formal"
+    NEUTRAL = "neutral"
+    FRIENDLY = "friendly"
+
+
+class CoverLetterSource(StrEnum):
+    GENERATED = "generated"
+    USER_EDIT = "user_edit"

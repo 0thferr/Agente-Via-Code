@@ -67,3 +67,34 @@ injection propriamente dita fica na camada de IA (Fase 3).
 
 **Modalidade de trabalho só é deduzida quando explícita.** Se o texto menciona mais de
 uma modalidade, ou nenhuma, o campo fica vazio — não presumimos.
+
+## Fase 3 — Inteligência
+
+**A IA não dá nota nem decide.** Ela devolve, requisito a requisito, um status e as
+referências do perfil que o comprovam. O código valida as referências, calcula a nota e
+decide. Isso torna o resultado auditável e reduz o impacto de prompt injection: não há
+número que o texto da vaga consiga "forçar".
+
+**Critérios eliminatórios fora da IA.** Salário, modalidade e localização são regras
+simples e objetivas; implementá-las em código evita custo, variação e erro do modelo. Se
+um eliminatório falha, a IA nem é chamada.
+
+**Dado desconhecido não elimina.** Vaga sem salário ou sem modalidade não é descartada:
+o critério fica `unknown`, sai da média e reduz a confiança.
+
+**Evidências por referência curta ("skill:1", "exp:2").** São fáceis de o modelo citar
+e de o código conferir. Referência inexistente é descartada; requisito "atendido" sem
+evidência vira `unclear`.
+
+**Provedor simulado como padrão.** O projeto roda e é testado sem chave nem custo. A
+troca para OpenAI é por configuração, sem mudar código (interface `StructuredLLM`).
+
+**HTTPX em vez do SDK da OpenAI.** Só uma chamada é necessária e o HTTPX já é dependência;
+o transporte simulado do HTTPX também facilita os testes.
+
+**Minimização de dados (LGPD).** Só fatos profissionais vão para a IA; dados de contato
+ficam de fora. Prompts e respostas não são registrados em log.
+
+**Análises e textos versionados.** Cada análise é um registro novo (com pesos, nota
+mínima e versão do perfil usados), e cada texto gerado ou editado é uma nova versão. Isso
+mantém o histórico dos motivos de aprovação e descarte.
