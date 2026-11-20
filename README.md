@@ -100,6 +100,10 @@ pytest -k refresh                        # testes pelo nome
 ruff check . && ruff format --check .    # lint e formatação
 ```
 
+**CI:** o GitHub Actions (`.github/workflows/ci.yml`) roda lint, formatação e toda a
+suíte de testes (Python 3.12 + PostgreSQL 16) e constrói a imagem Docker a cada push e
+pull request.
+
 Para usar outro banco de testes, defina `TEST_DATABASE_URL`. **O banco de testes é
 recriado do zero a cada execução — nunca aponte para um banco com dados reais.**
 
@@ -548,4 +552,3 @@ e-mail que precisa de validação, prazo próximo e resumo diário.
   os tokens de e-mail cifrados não podem ser lidos (e trocá-la exige reconectar as contas).
 - Rode a API e o worker como serviços separados; o worker pode ter várias réplicas.
 - Restrinja a saída de rede do servidor (webhooks) e monitore `GET /api/v1/ready`.
-- Configure CI rodando `ruff check`, `ruff format --check` e `pytest` a cada push.
