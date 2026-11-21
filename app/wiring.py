@@ -35,6 +35,11 @@ from app.services.cover_letters.writers import (
     LLMCoverLetterWriter,
     TemplateCoverLetterWriter,
 )
+from app.services.resumes.parsing import (
+    HeuristicResumeParser,
+    LLMResumeParser,
+    ResumeParser,
+)
 
 
 @lru_cache
@@ -64,6 +69,11 @@ def get_requirement_analyzer() -> RequirementAnalyzer:
 def get_cover_letter_writer() -> CoverLetterWriter:
     llm = get_llm()
     return LLMCoverLetterWriter(llm) if llm else TemplateCoverLetterWriter()
+
+
+def get_resume_parser() -> ResumeParser:
+    llm = get_llm()
+    return LLMResumeParser(llm) if llm else HeuristicResumeParser()
 
 
 @lru_cache

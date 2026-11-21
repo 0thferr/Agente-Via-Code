@@ -285,3 +285,21 @@ regra pode precisar de outro horário.
 
 **Classificador recebe o fuso por parâmetro.** É uma função pura; quem chama passa o fuso
 do usuário. Isso mantém a função testável sem banco.
+
+## Estruturação do currículo
+
+**Mesmo padrão da análise de vagas: a IA sugere, o código confere, o usuário decide.**
+Cada item extraído precisa aparecer literalmente no texto do PDF (comparação por termos
+inteiros, sem acento e sem diferença de maiúsculas). Isso impede, por construção, que a
+IA "complete" o currículo com experiências ou certificações inexistentes.
+
+**Leitor simulado conservador.** Ele reconhece seções simples (competências, idiomas) e não
+tenta interpretar experiências e formação, cujos formatos variam demais; errar ali geraria
+dados falsos no rascunho.
+
+**Contatos fora da IA.** E-mail, telefone e links são extraídos por regras locais e
+removidos do texto antes de ir para o provedor de IA.
+
+**Upload fora do event loop.** A rota é `async`, mas o serviço é síncrono e pode esperar a
+IA por dezenas de segundos; ele roda em `run_in_threadpool` para não travar as outras
+requisições.

@@ -1,7 +1,9 @@
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, UploadFile, status
+from fastapi import APIRouter, Depends, UploadFile, status
 from fastapi.responses import FileResponse
+from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUserDep, FileStorageDep, SessionDep, SettingsDep
 from app.core.errors import NotFoundError, ValidationError
@@ -13,6 +15,8 @@ from app.schemas.profile import (
     SkillOut,
 )
 from app.services import profile_service, resume_service
+from app.services.resumes.parsing import ResumeParser
+from app.wiring import get_resume_parser
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -45,9 +49,10 @@ async def upload_resume(
     session: SessionDep,
     settings: SettingsDep,
     storage: FileStorageDep,
+    parser: Annotated[ResumeParser, Depends(get_resume_parser)],
     current_user: CurrentUserDep,
 ) -> ResumeOut:
-    """Envia um currículo em PDF e devolve o rascunho extraído para revisão."""
+    """Envia um currículo em PDF e devolve o rascunho estruturado para revisão."""
     if file.content_type != PDF_CONTENT_TYPE:
         raise ValidationError("Envie o currículo no formato PDF.")
     # Lê no máximo limite + 1 byte: suficiente para saber se o arquivo é grande demais
@@ -56,8 +61,16 @@ async def upload_resume(
     if len(content) > settings.max_resume_size_bytes:
         raise ValidationError(f"O PDF excede o limite de {settings.max_resume_size_mb} MB.")
 
-    resume = resume_service.upload_resume(
-        session, storage, current_user.id, file.filename or "curriculo.pdf", content
+    # O serviço é síncrono e pode chamar a IA (até dezenas de segundos): roda numa
+    # thread para não travar o event loop e, com ele, as outras requisições.
+    resume = await run_in_threadpool(
+        resume_service.upload_resume,
+        session,
+        storage,
+        current_user.id,
+        file.filename or "curriculo.pdf",
+        content,
+        parser,
     )
     return ResumeOut.model_validate(resume)
 

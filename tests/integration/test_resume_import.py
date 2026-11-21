@@ -32,7 +32,8 @@ def test_upload_extracts_draft_without_touching_profile(client, auth_headers):
 def test_draft_does_not_invent_missing_fields(client, auth_headers):
     response = upload(client, auth_headers, make_pdf(["Ana Souza"]))
 
-    assert response.json()["extracted_data"]["profile_draft"] == {}
+    # Só o que está no texto: o nome. Nenhum contato, experiência ou competência inventada.
+    assert response.json()["extracted_data"]["profile_draft"] == {"full_name": "Ana Souza"}
 
 
 def test_confirm_saves_reviewed_profile(client, auth_headers):

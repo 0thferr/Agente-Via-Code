@@ -465,6 +465,22 @@ e-mail que precisa de validação, prazo próximo e resumo diário.
 - Ao excluir a conta, os tokens OAuth são apagados do sistema, mas não são revogados no
   Google/Microsoft: revogue o acesso também nas configurações da sua conta de e-mail.
 
+## Importação de currículo
+
+`POST /api/v1/profile/resumes` lê o PDF e devolve um **rascunho** em `extracted_data`:
+
+1. Contatos (e-mail, telefone, LinkedIn, GitHub) são extraídos localmente por regras.
+2. O restante é estruturado pelo leitor configurado: `simulated` (seções do currículo)
+   ou IA (`AI_PROVIDER=openai`). Antes de ir para a IA, e-mails, telefones e links são
+   removidos do texto (minimização).
+3. **Anti-invenção:** cada nome, cargo, empresa, instituição, competência e certificação
+   precisa aparecer literalmente no PDF; o que não aparece é descartado com um aviso em
+   `notes`.
+4. Nada vai para o perfil até você revisar e confirmar em
+   `POST /api/v1/profile/resumes/{id}/confirm`.
+
+Se a IA falhar, o rascunho básico (contatos) é mantido e o motivo aparece em `notes`.
+
 ## Fuso horário
 
 Cada conta tem um fuso IANA (`timezone`, padrão `America/Sao_Paulo`), alterado em
@@ -519,10 +535,12 @@ o fuso próprio de cada regra.
 
 ## Limitações conhecidas
 
-- **Importação de currículo**: a extração atual é determinística — preenche apenas
-  e-mail, telefone, LinkedIn e GitHub encontrados literalmente no texto. Experiências,
-  formação e competências precisam ser completadas pelo usuário na revisão. A
-  estruturação com IA está prevista para a Fase 3, sempre com revisão humana.
+- **Importação de currículo**: no modo `simulated`, o leitor reconhece nome, cargo,
+  resumo, competências, idiomas e certificações por seções ("Competências", "Idiomas"...),
+  mas não interpreta experiências nem formação. Com `AI_PROVIDER=openai`, a IA estrutura
+  o texto todo (não validado com chave real). Em ambos, itens que não aparecem no texto
+  são descartados, e a categoria das competências (técnica/comportamental) precisa de
+  revisão.
 - PDFs digitalizados (imagem) não têm texto extraível; o arquivo é guardado, mas o
   rascunho vem vazio (não há OCR).
 - Arquivos ficam em disco local (`STORAGE_DIR`). Em produção com várias instâncias, use
@@ -549,7 +567,6 @@ o fuso próprio de cada regra.
 - A detecção de afirmações não comprovadas nos textos olha tecnologias e requisitos
   listados na vaga; afirmações genéricas sem esses termos (ex.: "liderei equipes") só
   são verificadas quando o gerador declara a afirmação em `claims`.
-- A importação de currículo ainda não usa IA para estruturar experiências.
 - **Candidaturas:** nenhuma plataforma real tem envio integrado; só o enviador simulado.
   O "currículo adequado à vaga" é a lista ordenada de destaques (`resume_highlights`); não
   há geração de um novo PDF.

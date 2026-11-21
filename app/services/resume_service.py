@@ -18,6 +18,7 @@ from pypdf.errors import PdfReadError, PyPdfError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.ai.llm import AIProviderError
 from app.core.errors import ConflictError, NotFoundError, ValidationError
 from app.models.enums import ResumeImportStatus
 from app.models.profile import Resume
@@ -25,6 +26,14 @@ from app.schemas.profile import ProfileIn
 from app.services import profile_service
 from app.services.audit_service import record_audit_event
 from app.services.file_storage import LocalFileStorage
+from app.services.resumes.parsing import (
+    EMAIL_PATTERN,
+    GITHUB_PATTERN,
+    LINKEDIN_PATTERN,
+    PHONE_PATTERN,
+    ResumeParser,
+    build_structured_draft,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +42,6 @@ MAX_FILENAME_LENGTH = 255
 MAX_EXTRACTED_TEXT_LENGTH = 50_000
 MAX_PDF_PAGES = 20
 
-EMAIL_PATTERN = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
-PHONE_PATTERN = re.compile(r"\+?\d{0,3}[\s(]*\d{2}[\s)]*9?\d{4}[\s-]?\d{4}")
-LINKEDIN_PATTERN = re.compile(r"(?:https?://)?(?:[\w-]+\.)?linkedin\.com/in/[\w%-]+/?", re.I)
-GITHUB_PATTERN = re.compile(r"(?:https?://)?(?:www\.)?github\.com/[\w-]+/?", re.I)
-
 
 def upload_resume(
     session: Session,
@@ -45,6 +49,7 @@ def upload_resume(
     user_id: uuid.UUID,
     filename: str,
     content: bytes,
+    parser: ResumeParser,
 ) -> Resume:
     if not content.startswith(PDF_MAGIC_BYTES):
         raise ValidationError("O arquivo enviado não é um PDF válido.")
@@ -65,7 +70,7 @@ def upload_resume(
     )
     try:
         text = extract_pdf_text(content)
-        resume.extracted_data = build_profile_draft(text)
+        resume.extracted_data = build_profile_draft(text, parser)
     except (PyPdfError, ValueError) as exc:
         # PDFs malformados podem gerar erros variados; o arquivo é guardado mesmo assim.
         logger.warning("resume_extraction_failed", extra={"error_type": type(exc).__name__})
@@ -100,12 +105,12 @@ def extract_pdf_text(content: bytes) -> str:
     return text[:MAX_EXTRACTED_TEXT_LENGTH].strip()
 
 
-def build_profile_draft(text: str) -> dict[str, Any]:
-    """Monta um rascunho com o que pode ser extraído de forma determinística.
+def build_profile_draft(text: str, parser: ResumeParser) -> dict[str, Any]:
+    """Monta o rascunho do perfil para revisão.
 
-    Só preenchemos campos que aparecem literalmente no texto. Experiências,
-    formação e competências ficam para o usuário revisar e completar (a
-    estruturação com IA é prevista para a Fase 3, sempre com revisão humana).
+    Contatos são extraídos localmente por regras; o restante é estruturado pelo
+    leitor (simulado ou IA) e conferido contra o texto original. Nada vai para o
+    perfil sem a confirmação do usuário.
     """
     notes: list[str] = []
     if not text:
@@ -117,10 +122,23 @@ def build_profile_draft(text: str) -> dict[str, Any]:
         "linkedin_url": _as_url(_first_match(LINKEDIN_PATTERN, text)),
         "github_url": _as_url(_first_match(GITHUB_PATTERN, text)),
     }
+    structured: dict[str, Any] = {}
+    if text:
+        try:
+            draft = build_structured_draft(parser.parse(text), text)
+            structured = {key: value for key, value in draft.profile.items() if value}
+            notes.extend(draft.warnings)
+            if not structured.get("experiences"):
+                notes.append("Nenhuma experiência estruturada: preencha na revisão.")
+        except AIProviderError as exc:
+            logger.warning("resume_structuring_failed", extra={"parser": parser.provider_name})
+            notes.append(f"Estruturação automática indisponível ({exc}). Preencha na revisão.")
+    contacts = {key: value for key, value in detected.items() if value}
     return {
-        "profile_draft": {key: value for key, value in detected.items() if value},
+        "profile_draft": {**structured, **contacts},
         "raw_text": text,
         "notes": notes,
+        "parser": {"provider": parser.provider_name, "model": parser.model_name},
     }
 
 
