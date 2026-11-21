@@ -48,7 +48,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="1.5.0",
+        version="1.6.0",
         description="API do agente pessoal de candidaturas JobPilot AI.",
     )
     if settings.cors_origins:

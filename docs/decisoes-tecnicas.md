@@ -326,3 +326,12 @@ linha do tempo, notificações, recarregamento e logout, sem erros no console. E
 três problemas corrigidos: vagas importadas pelo painel ficavam sempre "pendentes" no modo
 simulado (faltavam campos de requisitos), a mensagem de análise pendente não dizia o motivo
 real, e o cabeçalho aparecia na tela de login (`[hidden]` sobrescrito por `display: flex`).
+
+**Editor de listas reutilizável (`frontend/js/forms.js`).** Competências, idiomas,
+experiências, formação e certificações usam o mesmo componente (campos por especificação,
+adicionar/remover linhas). A validação continua no backend: o painel só exibe as mensagens
+de erro da API, evitando regras duplicadas em dois lugares.
+
+**Importação de currículo pelo painel = rascunho + confirmação.** O rascunho preenche o
+formulário; ao salvar, o painel chama `POST /profile/resumes/{id}/confirm` com o perfil
+revisado. É o mesmo fluxo de revisão humana da API.

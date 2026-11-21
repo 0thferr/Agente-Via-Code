@@ -2,16 +2,22 @@
 import { api, isLoggedIn, logout } from "./api.js";
 import { el, toast } from "./ui.js";
 import { renderApplications } from "./views/applications.js";
+import { renderAutomations } from "./views/automations.js";
 import { renderJobs } from "./views/jobs.js";
 import { renderLogin } from "./views/login.js";
 import { renderNotifications } from "./views/notifications.js";
 import { renderOverview } from "./views/overview.js";
+import { renderProfile } from "./views/profile.js";
+import { renderSettings } from "./views/settings.js";
 
 const ROUTES = {
   "#/": { label: "Visão geral", render: renderOverview },
   "#/vagas": { label: "Vagas", render: renderJobs },
   "#/candidaturas": { label: "Candidaturas", render: renderApplications },
   "#/notificacoes": { label: "Notificações", render: (container) => renderNotifications(container, updateUnreadCount) },
+  "#/automacoes": { label: "Automações", render: renderAutomations },
+  "#/perfil": { label: "Perfil", render: renderProfile },
+  "#/configuracoes": { label: "Configurações", render: renderSettings },
 };
 
 const main = document.getElementById("main");

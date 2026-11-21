@@ -54,7 +54,9 @@ export async function api(path, options = {}) {
   }
 }
 
-async function request(path, { method = "GET", body, query, auth = true } = {}) {
+// `formData` é usado em uploads de arquivo: o navegador define o Content-Type
+// (multipart com boundary) sozinho, por isso não o informamos.
+async function request(path, { method = "GET", body, formData, query, auth = true } = {}) {
   const url = new URL(API_BASE + path, window.location.origin);
   for (const [key, value] of Object.entries(query || {})) {
     if (value !== undefined && value !== null && value !== "") url.searchParams.set(key, value);
@@ -66,7 +68,7 @@ async function request(path, { method = "GET", body, query, auth = true } = {}) 
   const response = await fetch(url, {
     method,
     headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: formData ?? (body === undefined ? undefined : JSON.stringify(body)),
   });
   if (response.status === 204) return null;
   const data = await response.json().catch(() => null);

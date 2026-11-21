@@ -22,7 +22,27 @@ def test_dashboard_page_has_security_headers(client):
 
 
 def test_dashboard_scripts_are_served(client):
-    for path in ("/app/js/app.js", "/app/js/api.js", "/app/js/ui.js", "/app/styles.css"):
+    paths = [
+        "/app/js/app.js",
+        "/app/js/api.js",
+        "/app/js/ui.js",
+        "/app/js/forms.js",
+        "/app/styles.css",
+        *(
+            f"/app/js/views/{name}.js"
+            for name in (
+                "login",
+                "overview",
+                "jobs",
+                "applications",
+                "notifications",
+                "profile",
+                "settings",
+                "automations",
+            )
+        ),
+    ]
+    for path in paths:
         assert client.get(path).status_code == 200, path
 
 

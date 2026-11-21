@@ -371,6 +371,14 @@ com HTML, CSS e JavaScript puros (módulos ES), sem framework e sem etapa de bui
   (dados prontos com botões de copiar), aprovar, enviar, registrar envio feito na
   plataforma, atualizar etapa e ver a linha do tempo.
 - **Notificações:** lista e marcação como lida.
+- **Automações:** criar rotinas (horário fixo ou intervalo), ativar/desativar, executar
+  agora e ver as últimas execuções.
+- **Perfil:** formulário completo (dados, competências, idiomas, experiências, formação,
+  certificações). O upload do currículo em PDF preenche o formulário com o rascunho; ao
+  salvar, a importação é confirmada.
+- **Configurações:** fuso horário, modo de candidatura, limites diários do modo assistido
+  (LinkedIn, Gupy...), nota mínima e pesos da análise, tom dos textos, canais de
+  notificação e conexão de e-mail.
 
 **Segurança:** dados vindos da API (descrições de vagas, e-mails) são sempre inseridos como
 texto (`textContent`), nunca como HTML; links externos só são aceitos com `http(s)`; as
@@ -378,8 +386,8 @@ páginas têm **Content-Security-Policy** que só permite scripts e estilos do p
 O access token fica em memória e o refresh token no `sessionStorage` da aba (em produção, o
 ideal é cookie `httpOnly`, o que exigiria autenticação por cookie no backend).
 
-Ainda não há telas de perfil, automações, integrações de e-mail e preferências: use a API
-(`/docs`) para essas configurações.
+Ainda pela API (`/docs`): exemplos de escrita para os textos, eventos de notificação
+desativados e intervalo mínimo por evento, e plataformas de envio automático.
 
 ## Modo assistido (LinkedIn e Gupy)
 
