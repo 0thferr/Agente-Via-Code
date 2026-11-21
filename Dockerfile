@@ -12,6 +12,7 @@ RUN pip install .
 
 COPY alembic.ini ./
 COPY alembic ./alembic
+COPY frontend ./frontend
 
 # Executa como usuário sem privilégios de root.
 RUN useradd --create-home --uid 1000 jobpilot \

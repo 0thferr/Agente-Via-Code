@@ -2,9 +2,12 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -13,6 +16,31 @@ from app.core.logging import configure_logging
 
 logger = logging.getLogger("app.request")
 
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
+FRONTEND_PREFIX = "/app"
+# Só scripts e estilos do próprio servidor; nada embutido, nada de terceiros. Mesmo que
+# um texto externo (descrição de vaga, e-mail) contenha HTML/JS, o navegador não executa.
+FRONTEND_SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+    ),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
+
+
+def _mount_frontend(app: FastAPI) -> None:
+    """Serve o dashboard web (arquivos estáticos) em /app, na mesma origem da API."""
+    if not FRONTEND_DIR.is_dir():
+        logger.warning("frontend_not_found", extra={"path": str(FRONTEND_DIR)})
+        return
+    app.mount(FRONTEND_PREFIX, StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+
+    @app.get("/", include_in_schema=False)
+    def root() -> RedirectResponse:
+        return RedirectResponse(f"{FRONTEND_PREFIX}/")
+
 
 def create_app() -> FastAPI:
     settings = get_settings()
@@ -20,7 +48,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title=settings.app_name,
-        version="1.4.0",
+        version="1.5.0",
         description="API do agente pessoal de candidaturas JobPilot AI.",
     )
     if settings.cors_origins:
@@ -52,6 +80,8 @@ def create_app() -> FastAPI:
             )
             raise
         response.headers["X-Request-ID"] = request_id
+        if request.url.path.startswith(FRONTEND_PREFIX):
+            response.headers.update(FRONTEND_SECURITY_HEADERS)
         # Registramos só método, rota e status: nunca corpo, query string ou cabeçalhos,
         # que podem conter dados pessoais ou tokens.
         logger.info(
@@ -68,6 +98,7 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(app)
     app.include_router(api_router)
+    _mount_frontend(app)
     return app
 
 

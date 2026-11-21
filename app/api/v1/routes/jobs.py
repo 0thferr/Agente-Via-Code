@@ -114,8 +114,18 @@ def list_jobs(
     current_user: CurrentUserDep,
 ) -> JobListResponse:
     jobs, total = job_service.list_jobs(session, current_user.id, filters)
+    latest = analysis_service.latest_results_by_job(
+        session, current_user.id, [job.id for job in jobs]
+    )
+    items = []
+    for job in jobs:
+        item = JobSummaryOut.model_validate(job)
+        if analysis := latest.get(job.id):
+            item.latest_score = analysis.score
+            item.latest_recommendation = analysis.recommendation
+        items.append(item)
     return JobListResponse(
-        items=[JobSummaryOut.model_validate(job) for job in jobs],
+        items=items,
         total=total,
         limit=filters.limit,
         offset=filters.offset,

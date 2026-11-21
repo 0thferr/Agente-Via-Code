@@ -226,7 +226,9 @@ def prepare_application(
             details={"reasons": analysis.decision_reasons},
         )
         session.commit()
-        raise ValidationError("Análise pendente: a descrição da vaga é insuficiente.")
+        # O motivo real vem da análise (descrição curta, nenhum requisito avaliável...).
+        reasons = " ".join(analysis.decision_reasons) or "Análise pendente."
+        raise ValidationError(reasons)
 
     _apply_analysis(application, analysis)
     if analysis.recommendation is not Recommendation.QUALIFIED:

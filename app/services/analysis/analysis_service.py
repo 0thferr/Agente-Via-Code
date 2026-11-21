@@ -179,6 +179,25 @@ def list_analyses(session: Session, user_id: uuid.UUID, job_id: uuid.UUID) -> li
     )
 
 
+def latest_results_by_job(
+    session: Session, user_id: uuid.UUID, job_ids: list[uuid.UUID]
+) -> dict[uuid.UUID, JobAnalysis]:
+    """Última análise concluída de cada vaga da lista (uma consulta para a página toda)."""
+    if not job_ids:
+        return {}
+    analyses = session.scalars(
+        select(JobAnalysis)
+        .where(
+            JobAnalysis.user_id == user_id,
+            JobAnalysis.job_id.in_(job_ids),
+            JobAnalysis.status == AnalysisStatus.COMPLETED,
+        )
+        .order_by(JobAnalysis.created_at)
+    )
+    # Ordenadas da mais antiga para a mais nova: a última sobrescreve as anteriores.
+    return {analysis.job_id: analysis for analysis in analyses}
+
+
 def get_latest_analysis(
     session: Session, user_id: uuid.UUID, job_id: uuid.UUID
 ) -> JobAnalysis | None:

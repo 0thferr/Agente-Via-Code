@@ -132,6 +132,8 @@ class JobSummaryOut(BaseModel):
     salary_currency: str | None
     posted_at: datetime | None
     created_at: datetime
+    latest_score: int | None = Field(default=None, description="Nota da última análise concluída.")
+    latest_recommendation: str | None = None
 
 
 class JobDetailOut(JobSummaryOut):
