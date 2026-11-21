@@ -58,7 +58,9 @@ def test_prepare_explains_the_real_reason_when_analysis_is_pending(client, auth_
         },
         headers=auth_headers,
     ).json()["job"]
-    application = client.post("/api/v1/applications", json={"job_id": job["id"]}, headers=auth_headers)
+    application = client.post(
+        "/api/v1/applications", json={"job_id": job["id"]}, headers=auth_headers
+    )
 
     response = client.post(
         f"/api/v1/applications/{application.json()['id']}/prepare", json={}, headers=auth_headers

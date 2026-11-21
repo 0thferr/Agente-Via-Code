@@ -303,3 +303,26 @@ removidos do texto antes de ir para o provedor de IA.
 **Upload fora do event loop.** A rota é `async`, mas o serviço é síncrono e pode esperar a
 IA por dezenas de segundos; ele roda em `run_in_threadpool` para não travar as outras
 requisições.
+
+## Painel web
+
+**JavaScript puro, sem framework e sem build.** Para um painel pessoal com poucas telas,
+React/Vite trariam dependências, etapa de build e outra pipeline de CI sem ganho real
+agora. Módulos ES nativos dão organização suficiente; se o painel crescer, a migração para
+um framework é direta, porque a API já é o contrato.
+
+**Servido pela própria API, na mesma origem.** Dispensa CORS e um segundo serviço no
+deploy. O FastAPI monta `frontend/` em `/app` com `StaticFiles`.
+
+**XSS tratado por construção.** Descrições de vagas e e-mails são conteúdo externo não
+confiável. O utilitário `el()` só insere texto (`textContent`), links passam por `safeLink`
+(só `http(s)`), e a CSP bloqueia scripts que não sejam do próprio servidor (inclusive
+scripts inline). O teste no navegador importa uma vaga com `<script>` e `<img onerror>` e
+confirma que nada executa.
+
+**Testado em navegador real.** Um roteiro com Playwright (fora do CI, por depender de
+navegador) percorreu login, importação, análise, candidatura, kit, registro de envio,
+linha do tempo, notificações, recarregamento e logout, sem erros no console. Ele revelou
+três problemas corrigidos: vagas importadas pelo painel ficavam sempre "pendentes" no modo
+simulado (faltavam campos de requisitos), a mensagem de análise pendente não dizia o motivo
+real, e o cabeçalho aparecia na tela de login (`[hidden]` sobrescrito por `display: flex`).

@@ -67,8 +67,8 @@ docker compose up --build -d
 docker compose exec api python -m app.cli create-user --email voce@exemplo.com
 ```
 
-A API fica em http://localhost:8000 e a documentação interativa (OpenAPI) em
-http://localhost:8000/docs.
+O **painel web** fica em http://localhost:8000/app/ (a raiz redireciona para ele) e a
+documentação interativa da API (OpenAPI) em http://localhost:8000/docs.
 
 ### Opção B — API local, banco e Redis no Docker
 
@@ -357,6 +357,29 @@ DISCOVERED → ANALYZING → QUALIFIED → AWAITING_APPROVAL → READY_TO_APPLY 
 - **Integrações de envio:** só existe o enviador **simulado** (vagas do provedor `mock`).
   Para as demais plataformas, candidate-se nelas e registre com `/mark-applied`
   (`confirmation_source = user_declared`).
+
+## Painel web
+
+Um painel simples, servido pela própria API em `/app/` (mesma origem, sem CORS), feito
+com HTML, CSS e JavaScript puros (módulos ES), sem framework e sem etapa de build
+(`frontend/`). Telas:
+
+- **Visão geral:** indicadores dos últimos 30 dias e funil.
+- **Vagas:** busca, importação manual (com requisitos e tecnologias), análise com nota e
+  motivos, e criação da candidatura.
+- **Candidaturas:** preparar, responder perguntas pendentes, **kit do modo assistido**
+  (dados prontos com botões de copiar), aprovar, enviar, registrar envio feito na
+  plataforma, atualizar etapa e ver a linha do tempo.
+- **Notificações:** lista e marcação como lida.
+
+**Segurança:** dados vindos da API (descrições de vagas, e-mails) são sempre inseridos como
+texto (`textContent`), nunca como HTML; links externos só são aceitos com `http(s)`; as
+páginas têm **Content-Security-Policy** que só permite scripts e estilos do próprio servidor.
+O access token fica em memória e o refresh token no `sessionStorage` da aba (em produção, o
+ideal é cookie `httpOnly`, o que exigiria autenticação por cookie no backend).
+
+Ainda não há telas de perfil, automações, integrações de e-mail e preferências: use a API
+(`/docs`) para essas configurações.
 
 ## Modo assistido (LinkedIn e Gupy)
 
