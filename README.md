@@ -323,6 +323,17 @@ Para usar a OpenAI, defina `AI_PROVIDER=openai`, `OPENAI_API_KEY` e confira em
 um transporte HTTP simulado. A integração com a OpenAI **ainda não foi validada contra a
 API real** neste projeto: valide com uma chave própria antes de depender dela.
 
+**Validar com a OpenAI real** (fora do CI; faz chamadas pagas, de poucos centavos):
+
+```bash
+OPENAI_API_KEY=sk-... python scripts/validate_openai.py
+```
+
+O script testa a análise de compatibilidade (inclusive com uma tentativa de prompt
+injection na vaga), o texto de apresentação e a leitura de currículo, e confere as
+proteções com respostas reais do modelo. Na nuvem do Claude Code, com a chave salva em
+*Network secrets*, use `OPENAI_API_KEY=proxy-injected` (o proxy substitui pela chave real).
+
 **Dados enviados à IA:** apenas fatos profissionais (competências, experiências,
 formação, idiomas, certificações, resumo, senioridade e cargos desejados). Nome, e-mail,
 telefone e links **não** são enviados. Ainda assim, usar `openai` implica transferir
