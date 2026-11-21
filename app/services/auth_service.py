@@ -106,6 +106,15 @@ def get_user_from_access_token(session: Session, token: str, settings: Settings)
     return user
 
 
+def update_user_settings(session: Session, user: User, timezone: str) -> User:
+    user.timezone = timezone
+    record_audit_event(
+        session, action="user.settings_updated", user_id=user.id, details={"timezone": timezone}
+    )
+    session.commit()
+    return user
+
+
 def _issue_tokens(session: Session, user_id: uuid.UUID, settings: Settings) -> TokenResponse:
     access_token, _ = create_token(user_id, TokenType.ACCESS, settings)
     refresh_token, refresh_payload = create_token(user_id, TokenType.REFRESH, settings)

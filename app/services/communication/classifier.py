@@ -7,6 +7,7 @@ e-mail a terceiros. O e-mail é tratado como dado: nada no texto altera regras.
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
+from zoneinfo import ZoneInfo
 
 from app.core.text_normalization import normalize_text
 from app.models.enums import MessageCategory
@@ -54,7 +55,9 @@ class Classification:
     deadline_at: datetime | None
 
 
-def classify(subject: str, snippet: str, received_at: datetime) -> Classification:
+def classify(
+    subject: str, snippet: str, received_at: datetime, timezone: str = "UTC"
+) -> Classification:
     text = normalize_text(f"{subject} {snippet}")
     category = next(
         (cat for cat, words in CATEGORY_KEYWORDS if any(word in text for word in words)),
@@ -67,7 +70,7 @@ def classify(subject: str, snippet: str, received_at: datetime) -> Classificatio
             else MessageCategory.NOT_RECRUITING
         )
     raw_text = f"{subject} {snippet}".lower()
-    dates = extract_dates(f"{subject} {snippet}", received_at)
+    dates = extract_dates(f"{subject} {snippet}", received_at, timezone)
     has_deadline_word = bool(DEADLINE_PATTERN.search(text))
     is_recruiting = category is not MessageCategory.NOT_RECRUITING
     requires_response = category is not MessageCategory.NOT_RECRUITING and (
@@ -82,12 +85,14 @@ def classify(subject: str, snippet: str, received_at: datetime) -> Classificatio
     )
 
 
-def extract_dates(text: str, reference: datetime) -> list[datetime]:
+def extract_dates(text: str, reference: datetime, timezone: str = "UTC") -> list[datetime]:
     """Datas no formato dd/mm[/aaaa], com horário opcional logo depois ("às 14h").
 
     Datas sem ano assumem o próximo ano em que a data cai a partir da referência.
-    Fuso: UTC (o fuso do usuário ainda não é considerado na extração).
+    Datas e horários são interpretados no fuso informado (o do usuário) e devolvidos
+    em UTC.
     """
+    zone = ZoneInfo(timezone)
     results = []
     for match in _NUMERIC_DATE.finditer(text):
         day, month, year = int(match.group(1)), int(match.group(2)), match.group(3)
@@ -96,7 +101,8 @@ def extract_dates(text: str, reference: datetime) -> list[datetime]:
         full_year = _resolve_year(year, reference, month, day)
         moment = _time_after(text[match.end() : match.end() + 15])
         try:
-            results.append(datetime.combine(datetime(full_year, month, day).date(), moment, UTC))
+            local = datetime.combine(datetime(full_year, month, day).date(), moment, zone)
+            results.append(local.astimezone(UTC))
         except ValueError:
             continue
     return results

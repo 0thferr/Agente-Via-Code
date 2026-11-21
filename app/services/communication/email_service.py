@@ -9,6 +9,7 @@ import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -30,6 +31,7 @@ from app.models.enums import (
 )
 from app.models.job import JobOpportunity
 from app.schemas.communication import MessageFilters
+from app.services.applications.policy import user_timezone
 from app.services.applications.state_machine import can_transition, record_event, transition
 from app.services.audit_service import record_audit_event
 from app.services.communication import notification_service
@@ -301,7 +303,8 @@ def _store_message(
     message: EmailMessage,
     candidates: list[Candidate],
 ) -> RecruitmentMessage | None:
-    classification = classify(message.subject, message.snippet, message.received_at)
+    timezone = user_timezone(session, account.user_id)
+    classification = classify(message.subject, message.snippet, message.received_at, timezone)
     is_recruiting = classification.category is not MessageCategory.NOT_RECRUITING
     if not is_recruiting:
         match_status, application_id, confidence = MatchStatus.NOT_APPLICABLE, None, 0.0
@@ -487,6 +490,7 @@ def notify_upcoming_deadlines(session: Session, user_id: uuid.UUID, now: datetim
             RecruitmentMessage.deadline_at <= now + DEADLINE_WARNING_WINDOW,
         )
     ).all()
+    timezone = user_timezone(session, user_id)
     created = 0
     for message in messages:
         notification = notification_service.notify(
@@ -494,7 +498,10 @@ def notify_upcoming_deadlines(session: Session, user_id: uuid.UUID, now: datetim
             user_id,
             NotificationEvent.DEADLINE_APPROACHING,
             title="Prazo próximo do vencimento",
-            body=f"{message.subject} — prazo: {message.deadline_at:%d/%m %H:%M} (UTC)",
+            body=(
+                f"{message.subject} — prazo: "
+                f"{message.deadline_at.astimezone(ZoneInfo(timezone)):%d/%m %H:%M} ({timezone})"
+            ),
             data={"message_id": str(message.id)},
             dedup_key=f"deadline:{message.id}",
             now=now,

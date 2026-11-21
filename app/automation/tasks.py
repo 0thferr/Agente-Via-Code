@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.core.crypto import SecretCipher
 from app.core.errors import ConflictError, IntegrationError, ValidationError
+from app.core.timezones import local_date_iso
 from app.integrations.application_submitters.registry import SubmitterRegistry
 from app.integrations.email.base import EmailClient
 from app.integrations.job_providers.registry import ProviderRegistry
@@ -226,7 +227,7 @@ def daily_summary(
             f"aguardando aprovação: {summary['awaiting_approval']}"
         ),
         data=summary,
-        dedup_key=f"daily_summary:{now.date().isoformat()}",
+        dedup_key=f"daily_summary:{local_date_iso(policy.user_timezone(session, user_id), now)}",
     )
     session.commit()
     return summary

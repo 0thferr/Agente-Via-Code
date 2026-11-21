@@ -29,6 +29,7 @@ from app.schemas.dashboard import (
     TimelineOut,
     TimelinePoint,
 )
+from app.services.applications.policy import user_timezone
 
 PROGRESS_STAGES = {
     "assessment": ApplicationStatus.ASSESSMENT,
@@ -138,9 +139,11 @@ def timeline(session: Session, user_id: uuid.UUID, filters: TimelineFilters) -> 
     period = filters.period.value
     points: dict[datetime, TimelinePoint] = {}
 
+    timezone = user_timezone(session, user_id)
+
     def bucket(column: ColumnElement) -> ColumnElement:
-        # Agrupa sempre em UTC, independentemente do fuso configurado no banco.
-        return func.date_trunc(period, column, "UTC").label("bucket")
+        # Agrupa pelo dia/semana/mês do fuso do usuário (meia-noite local).
+        return func.date_trunc(period, column, timezone).label("bucket")
 
     latest = _latest_analysis_subquery(user_id)
     jobs_query = _filtered_jobs(user_id, filters, latest)

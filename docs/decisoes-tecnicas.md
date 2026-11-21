@@ -270,3 +270,18 @@ requisições DELETE, e a senha precisa ir no corpo (nunca na URL).
 - **Erros inesperados registrados com `request_id`** no log estruturado.
 - **Associação de e-mail por palavra inteira** também nas palavras do cargo.
 - **Resumo do perfil nunca cortado no meio de uma palavra** no texto simulado.
+
+## Fuso horário do usuário
+
+**Fuso na conta, não em cada configuração.** Um único campo `users.timezone` (padrão
+`America/Sao_Paulo`) vale para limites diários, cota do modo assistido, datas de e-mails,
+resumo diário e dashboard. As rotinas de automação mantêm o fuso próprio, porque uma
+regra pode precisar de outro horário.
+
+**Banco em UTC, conversão nas bordas.** As datas continuam gravadas em UTC
+(`timestamptz`); o fuso só entra para calcular a "meia-noite local"
+(`local_start_of_day`), interpretar datas digitadas em e-mails e agrupar o dashboard
+(`date_trunc` com fuso).
+
+**Classificador recebe o fuso por parâmetro.** É uma função pura; quem chama passa o fuso
+do usuário. Isso mantém a função testável sem banco.

@@ -205,6 +205,7 @@ curl -s "localhost:8000/api/v1/jobs?q=python&work_model=remote&limit=20&offset=0
 | POST | `/api/v1/auth/login` | Login; devolve access + refresh token |
 | POST | `/api/v1/auth/refresh` | Rotação do refresh token |
 | GET | `/api/v1/auth/me` | Usuário autenticado |
+| PATCH | `/api/v1/auth/me` | Atualiza o fuso horário da conta (`timezone`, IANA) |
 | GET / PUT | `/api/v1/profile` | Consulta / cria-ou-substitui o perfil |
 | GET | `/api/v1/profile/skills` | Competências do perfil |
 | POST / GET | `/api/v1/profile/resumes` | Envia / lista currículos |
@@ -464,6 +465,15 @@ e-mail que precisa de validação, prazo próximo e resumo diário.
 - Ao excluir a conta, os tokens OAuth são apagados do sistema, mas não são revogados no
   Google/Microsoft: revogue o acesso também nas configurações da sua conta de e-mail.
 
+## Fuso horário
+
+Cada conta tem um fuso IANA (`timezone`, padrão `America/Sao_Paulo`), alterado em
+`PATCH /api/v1/auth/me`. Ele define quando o "dia" começa para: o limite diário de
+envios, a cota do modo assistido (LinkedIn/Gupy), o resumo diário e os períodos do
+dashboard. Datas lidas dos e-mails ("até 22/11 às 18h") são interpretadas nesse fuso, e os
+prazos aparecem nas notificações no horário local. As rotinas de automação continuam com
+o fuso próprio de cada regra.
+
 ## Segurança (o que já está implementado)
 
 - Senhas com **Argon2**; mensagem de erro e tempo de resposta iguais para e-mail
@@ -543,21 +553,19 @@ e-mail que precisa de validação, prazo próximo e resumo diário.
 - **Candidaturas:** nenhuma plataforma real tem envio integrado; só o enviador simulado.
   O "currículo adequado à vaga" é a lista ordenada de destaques (`resume_highlights`); não
   há geração de um novo PDF.
-- O limite diário de candidaturas conta o dia em UTC (o fuso das rotinas vale só para
-  o agendamento).
 - **Worker:** não há interrupção forçada de uma tarefa travada; o limite de tempo vem
   dos timeouts das chamadas externas e do prazo da reserva. Se uma tarefa passar do
   prazo, outro worker pode executá-la de novo — o que é seguro porque as tarefas são
   idempotentes, mas gasta processamento.
 - **E-mail:** os clientes Gmail e Outlook foram testados só com respostas HTTP simuladas;
   valide com um app registrado no Google Cloud / Microsoft Entra. A classificação é por
-  palavras-chave (português e inglês) e pode errar; o fuso das datas extraídas é UTC.
+  palavras-chave (português e inglês) e pode errar.
 - A associação por domínio usa uma lista curta de sufixos (`.com.br`, `.co.uk`...), não a
   Public Suffix List completa.
 - A validação de webhook não detecta DNS rebinding (domínio público que resolve para IP
   interno); em produção, restrinja também a saída de rede.
 - Notificações push não estão implementadas.
-- **Dashboard:** períodos agrupados em UTC; "etapas alcançadas" vêm da linha do tempo,
+- **Dashboard:** "etapas alcançadas" vêm da linha do tempo,
   então candidaturas criadas antes da Fase 4 (sem eventos) não entram nessas contagens.
 
 ## Recomendações de produção

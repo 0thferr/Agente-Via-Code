@@ -4,7 +4,6 @@ import re
 import uuid
 from datetime import datetime
 from typing import Annotated, Any, Self
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import (
     BaseModel,
@@ -15,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.core.timezones import DEFAULT_TIMEZONE, validate_timezone
 from app.models.enums import AutomationTask, JobRunStatus
 from app.schemas.job import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, JobSearchFilters
 
@@ -56,7 +56,7 @@ class ScheduleFields(BaseModel):
         description="0 = segunda ... 6 = domingo; vazio = todos.",
     )
     time_of_day: str | None = Field(default=None, description='Horário "HH:MM" no fuso da regra.')
-    timezone: str = "America/Sao_Paulo"
+    timezone: str = DEFAULT_TIMEZONE
     interval_minutes: int | None = Field(default=None, ge=MIN_INTERVAL_MINUTES, le=7 * 24 * 60)
 
     @field_validator("time_of_day")
@@ -68,12 +68,8 @@ class ScheduleFields(BaseModel):
 
     @field_validator("timezone")
     @classmethod
-    def validate_timezone(cls, value: str) -> str:
-        try:
-            ZoneInfo(value)
-        except (ZoneInfoNotFoundError, ValueError) as exc:
-            raise ValueError("Fuso horário IANA inválido (ex.: America/Sao_Paulo).") from exc
-        return value
+    def check_timezone(cls, value: str) -> str:
+        return validate_timezone(value)
 
 
 class AutomationRuleCreate(ScheduleFields):

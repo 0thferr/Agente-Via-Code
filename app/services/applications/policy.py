@@ -5,11 +5,12 @@ Centralizar aqui evita que a preparação e o envio usem critérios diferentes.
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import datetime
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.timezones import DEFAULT_TIMEZONE, local_start_of_day
 from app.integrations.application_submitters.registry import SubmitterRegistry
 from app.models.analysis import CoverLetter
 from app.models.application import Application, ApplicationApproval
@@ -21,6 +22,7 @@ from app.models.enums import (
 )
 from app.models.job import JobOpportunity
 from app.models.profile import ProfessionalProfile
+from app.models.user import User
 from app.schemas.application import ApplicationSettingsIn
 
 INTEGRATION_SOURCES = (ConfirmationSource.PLATFORM, ConfirmationSource.SIMULATED)
@@ -35,13 +37,18 @@ def answer_from_profile(profile_field: str | None, profile: ProfessionalProfile)
     return None
 
 
-def submissions_today(session: Session, user_id: uuid.UUID) -> int:
+def user_timezone(session: Session, user_id: uuid.UUID) -> str:
+    user = session.get(User, user_id)
+    return user.timezone if user else DEFAULT_TIMEZONE
+
+
+def submissions_today(session: Session, user_id: uuid.UUID, now: datetime | None = None) -> int:
     """Envios por integração desde o início do dia (UTC), incluindo os em andamento.
 
     Um envio em APPLYING ainda não tem submitted_at; sem contá-lo, dois envios
     simultâneos poderiam passar juntos pelo limite.
     """
-    start_of_day = datetime.combine(datetime.now(UTC).date(), time.min, tzinfo=UTC)
+    start_of_day = local_start_of_day(user_timezone(session, user_id), now)
     return (
         session.scalar(
             select(func.count())
@@ -90,7 +97,7 @@ def assisted_quota(
     """
     if platform not in settings.assisted_daily_limits:
         return None
-    start_of_day = datetime.combine(datetime.now(UTC).date(), time.min, tzinfo=UTC)
+    start_of_day = local_start_of_day(user_timezone(session, user_id))
     platform_applications = (
         select(func.count())
         .select_from(Application)

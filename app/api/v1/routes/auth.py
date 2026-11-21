@@ -7,7 +7,13 @@ from app.api.deps import (
     SettingsDep,
     client_identifier,
 )
-from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse, UserResponse
+from app.schemas.auth import (
+    LoginRequest,
+    RefreshRequest,
+    TokenResponse,
+    UserResponse,
+    UserUpdate,
+)
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -49,3 +55,12 @@ def refresh(
 @router.get("/me", response_model=UserResponse)
 def me(current_user: CurrentUserDep) -> UserResponse:
     return UserResponse.model_validate(current_user)
+
+
+@router.patch("/me", response_model=UserResponse)
+def update_me(
+    payload: UserUpdate, session: SessionDep, current_user: CurrentUserDep
+) -> UserResponse:
+    """Atualiza preferências da conta, como o fuso horário."""
+    user = auth_service.update_user_settings(session, current_user, payload.timezone)
+    return UserResponse.model_validate(user)

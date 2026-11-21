@@ -1,7 +1,10 @@
 import uuid
 from datetime import datetime
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+
+from app.core.timezones import validate_timezone
 
 
 class LoginRequest(BaseModel):
@@ -26,4 +29,11 @@ class UserResponse(BaseModel):
     id: uuid.UUID
     email: EmailStr
     is_active: bool
+    timezone: str
     created_at: datetime
+
+
+class UserUpdate(BaseModel):
+    timezone: Annotated[str, AfterValidator(validate_timezone)] = Field(
+        description="Fuso IANA (ex.: America/Sao_Paulo)."
+    )
